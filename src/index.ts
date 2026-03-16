@@ -1,0 +1,49 @@
+/**
+ * apcore-cli — Public API exports.
+ *
+ * This module re-exports the public surface of the apcore CLI package.
+ */
+
+// Core CLI
+export { createCli, main, buildModuleCommand, validateModuleId, collectInput, reconvertEnumValues } from "./main.js";
+export type { OptionConfig } from "./main.js";
+
+// Lazy module loading
+export { LazyModuleGroup } from "./cli.js";
+export type { Registry, Executor, ModuleDescriptor } from "./cli.js";
+
+// Configuration
+export { ConfigResolver, DEFAULTS } from "./config.js";
+
+// Discovery
+export { registerDiscoveryCommands } from "./discovery.js";
+
+// Output formatting
+export { formatExecResult, resolveFormat, truncate, formatModuleList, formatModuleDetail } from "./output.js";
+
+// Schema handling
+export { resolveRefs } from "./ref-resolver.js";
+export { schemaToCommanderOptions, mapType, extractHelp } from "./schema-parser.js";
+
+// Approval
+export { checkApproval } from "./approval.js";
+
+// Shell integration
+export { registerShellCommands } from "./shell.js";
+
+// Errors
+export {
+  ApprovalTimeoutError,
+  ApprovalDeniedError,
+  AuthenticationError,
+  ConfigDecryptionError,
+  ModuleExecutionError,
+  ModuleNotFoundError,
+  SchemaValidationError,
+  EXIT_CODES,
+  exitCodeForError,
+} from "./errors.js";
+export type { ExitCode } from "./errors.js";
+
+// Security
+export { AuditLogger, AuthProvider, ConfigEncryptor, Sandbox } from "./security/index.js";

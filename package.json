@@ -1,0 +1,50 @@
+{
+  "name": "apcore-cli",
+  "version": "0.1.0",
+  "description": "CLI wrapper for the apcore core SDK — exposes apcore modules as CLI commands",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "apcore-cli": "./dist/bin/apcore-cli.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "apcore",
+    "cli",
+    "ai",
+    "modules"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "apcore-js": "^0.13.0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "ajv": "^8.12.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsup": "^8.0.0",
+    "vitest": "^2.0.0",
+    "@types/node": "^20.0.0",
+    "@types/js-yaml": "^4.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "project": "apcore-cli-typescript",
+  "source_docs": "../apcore",
+  "reference_impl": "../apcore-cli-python",
+  "target_lang": "typescript",
+  "features": [
+    {
+      "id": "FE-07",
+      "name": "Config Resolver",
+      "plan_file": "config-resolver.md",
+      "status": "completed",
+      "priority": "P0",
+      "source_files": ["src/config.ts"],
+      "test_files": ["tests/config.test.ts"],
+      "depends_on": [],
+      "tasks_total": 3,
+      "tasks_completed": 3
+    },
+    {
+      "id": "FE-02",
+      "name": "Schema Parser",
+      "plan_file": "schema-parser.md",
+      "status": "completed",
+      "priority": "P0",
+      "source_files": ["src/schema-parser.ts", "src/ref-resolver.ts"],
+      "test_files": ["tests/schema-parser.test.ts", "tests/ref-resolver.test.ts"],
+      "depends_on": [],
+      "tasks_total": 7,
+      "tasks_completed": 7
+    },
+    {
+      "id": "FE-08",
+      "name": "Output Formatter",
+      "plan_file": "output-formatter.md",
+      "status": "completed",
+      "priority": "P1",
+      "source_files": ["src/output.ts"],
+      "test_files": ["tests/output.test.ts"],
+      "depends_on": [],
+      "tasks_total": 4,
+      "tasks_completed": 4
+    },
+    {
+      "id": "FE-03",
+      "name": "Approval Gate",
+      "plan_file": "approval-gate.md",
+      "status": "completed",
+      "priority": "P1",
+      "source_files": ["src/approval.ts"],
+      "test_files": ["tests/approval.test.ts"],
+      "depends_on": [],
+      "tasks_total": 4,
+      "tasks_completed": 4
+    },
+    {
+      "id": "FE-01",
+      "name": "Core Dispatcher",
+      "plan_file": "core-dispatcher.md",
+      "status": "completed",
+      "priority": "P0",
+      "source_files": ["src/main.ts", "src/cli.ts"],
+      "test_files": ["tests/cli.test.ts"],
+      "depends_on": ["FE-07", "FE-02", "FE-03", "FE-08"],
+      "tasks_total": 6,
+      "tasks_completed": 6
+    },
+    {
+      "id": "FE-04",
+      "name": "Discovery",
+      "plan_file": "discovery.md",
+      "status": "completed",
+      "priority": "P1",
+      "source_files": ["src/discovery.ts"],
+      "test_files": ["tests/discovery.test.ts"],
+      "depends_on": ["FE-08"],
+      "tasks_total": 3,
+      "tasks_completed": 3
+    },
+    {
+      "id": "FE-05",
+      "name": "Security Manager",
+      "plan_file": "security-manager.md",
+      "status": "completed",
+      "priority": "P1",
+      "source_files": [
+        "src/security/auth.ts",
+        "src/security/audit.ts",
+        "src/security/config-encryptor.ts",
+        "src/security/sandbox.ts",
+        "src/security/index.ts"
+      ],
+      "test_files": [
+        "tests/security/auth.test.ts",
+        "tests/security/audit.test.ts",
+        "tests/security/config-encryptor.test.ts",
+        "tests/security/sandbox.test.ts"
+      ],
+      "depends_on": ["FE-07"],
+      "tasks_total": 5,
+      "tasks_completed": 5
+    },
+    {
+      "id": "FE-06",
+      "name": "Shell Integration",
+      "plan_file": "shell-integration.md",
+      "status": "completed",
+      "priority": "P2",
+      "source_files": ["src/shell.ts"],
+      "test_files": ["tests/shell.test.ts"],
+      "depends_on": [],
+      "tasks_total": 4,
+      "tasks_completed": 4
+    }
+  ]
+}
