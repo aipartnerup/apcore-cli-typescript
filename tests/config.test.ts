@@ -47,8 +47,8 @@ describe("ConfigResolver", () => {
       expect(resolver.resolve("extensions.root")).toBe("./extensions");
       expect(resolver.resolve("logging.level")).toBe("WARNING");
       expect(resolver.resolve("sandbox.enabled")).toBe(false);
-      expect(resolver.resolve("cli.stdinBufferLimit")).toBe(10_485_760);
-      expect(resolver.resolve("cli.autoApprove")).toBe(false);
+      expect(resolver.resolve("cli.stdin_buffer_limit")).toBe(10_485_760);
+      expect(resolver.resolve("cli.auto_approve")).toBe(false);
     });
 
     it("returns undefined for unknown keys with no default", () => {
@@ -61,8 +61,8 @@ describe("ConfigResolver", () => {
       expect(DEFAULTS).toHaveProperty("extensions.root");
       expect(DEFAULTS).toHaveProperty("logging.level");
       expect(DEFAULTS).toHaveProperty("sandbox.enabled");
-      expect(DEFAULTS).toHaveProperty("cli.stdinBufferLimit");
-      expect(DEFAULTS).toHaveProperty("cli.autoApprove");
+      expect(DEFAULTS).toHaveProperty("cli.stdin_buffer_limit");
+      expect(DEFAULTS).toHaveProperty("cli.auto_approve");
     });
   });
 

@@ -8,6 +8,7 @@
  */
 
 import { Command } from "commander";
+import { buildModuleCommand } from "./main.js";
 
 // TODO: Import Registry and Executor from apcore-js once available
 // import type { Registry, Executor, ModuleDescriptor } from "apcore-js";
@@ -76,8 +77,6 @@ export class LazyModuleGroup {
    * TODO: Implement lazy command construction with schema-based options.
    */
   getCommand(cmdName: string): Command | null {
-    // TODO: Check cache, look up module in registry, build Command via
-    // buildModuleCommand(), cache and return
     if (this.commandCache.has(cmdName)) {
       return this.commandCache.get(cmdName)!;
     }
@@ -87,8 +86,7 @@ export class LazyModuleGroup {
       return null;
     }
 
-    // TODO: Build command from module descriptor using buildModuleCommand()
-    const cmd = new Command(cmdName).description(moduleDef.description);
+    const cmd = buildModuleCommand(moduleDef, this.executor);
     this.commandCache.set(cmdName, cmd);
     return cmd;
   }

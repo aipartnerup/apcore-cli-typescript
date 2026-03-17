@@ -4,7 +4,8 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { LazyModuleGroup } from "../src/cli.js";
-import { validateModuleId, reconvertEnumValues, resolveFormat, collectInput } from "../src/main.js";
+import { validateModuleId, reconvertEnumValues, collectInput } from "../src/main.js";
+import { resolveFormat } from "../src/output.js";
 import type { ModuleDescriptor, Registry, Executor } from "../src/cli.js";
 
 function makeMod(id: string, desc = "Test module"): ModuleDescriptor {

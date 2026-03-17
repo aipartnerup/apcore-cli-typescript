@@ -16,8 +16,8 @@ export const DEFAULTS: Record<string, unknown> = {
   "extensions.root": "./extensions",
   "logging.level": "WARNING",
   "sandbox.enabled": false,
-  "cli.stdinBufferLimit": 10_485_760,
-  "cli.autoApprove": false,
+  "cli.stdin_buffer_limit": 10_485_760,
+  "cli.auto_approve": false,
 };
 
 // ---------------------------------------------------------------------------

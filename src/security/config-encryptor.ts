@@ -9,6 +9,21 @@ import * as os from "node:os";
 import { ConfigDecryptionError } from "../errors.js";
 
 // ---------------------------------------------------------------------------
+// Keytar dynamic import helper
+// ---------------------------------------------------------------------------
+
+let keytarModule: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
+async function getKeytar(): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (keytarModule) return keytarModule;
+  try {
+    keytarModule = await import("keytar");
+    return keytarModule;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ConfigEncryptor
 // ---------------------------------------------------------------------------
 
@@ -22,13 +37,11 @@ export class ConfigEncryptor {
   /**
    * Encrypt and store a configuration value.
    */
-  store(key: string, value: string): string {
-    if (this.keytarAvailable()) {
+  async store(key: string, value: string): Promise<string> {
+    const keytar = await getKeytar();
+    if (keytar) {
       try {
-        // Dynamic import for optional keytar
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const keytar = require("keytar");
-        keytar.setPassword(ConfigEncryptor.SERVICE_NAME, key, value);
+        await keytar.setPassword(ConfigEncryptor.SERVICE_NAME, key, value);
         return `keyring:${key}`;
       } catch {
         // Fall through to file-based encryption
@@ -42,13 +55,17 @@ export class ConfigEncryptor {
   /**
    * Retrieve and decrypt a configuration value.
    */
-  retrieve(configValue: string, key: string): string {
+  async retrieve(configValue: string, key: string): Promise<string> {
     if (configValue.startsWith("keyring:")) {
+      const keytar = await getKeytar();
+      if (!keytar) {
+        throw new ConfigDecryptionError(
+          `Keyring module not available to retrieve '${key}'.`,
+        );
+      }
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const keytar = require("keytar");
         const refKey = configValue.slice("keyring:".length);
-        const result = keytar.getPasswordSync?.(
+        const result = await keytar.getPassword(
           ConfigEncryptor.SERVICE_NAME,
           refKey,
         );
@@ -73,7 +90,7 @@ export class ConfigEncryptor {
       );
       try {
         return this.aesDecrypt(ciphertext);
-      } catch (err) {
+      } catch {
         throw new ConfigDecryptionError(
           `Failed to decrypt configuration value '${key}'. Re-configure with 'apcore-cli config set ${key}'.`,
         );
@@ -84,16 +101,9 @@ export class ConfigEncryptor {
     return configValue;
   }
 
-  private keytarAvailable(): boolean {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require("keytar");
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
+  // NOTE: Best-effort fallback when OS keyring is unavailable.
+  // The key is derived from hostname + username (non-secret inputs).
+  // For production security, ensure the OS keyring is accessible.
   private deriveKey(): Buffer {
     const hostname = os.hostname();
     const username =

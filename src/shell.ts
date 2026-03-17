@@ -4,8 +4,15 @@
  * Protocol spec: Shell integration
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import * as path from "node:path";
 import { Command } from "commander";
 import { EXIT_CODES } from "./errors.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "../package.json"), "utf-8"));
+const SHELL_VERSION: string = pkg.version;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -167,7 +174,7 @@ function generateManPage(
   commandName: string,
   command: Command | null,
   progName: string,
-  version = "0.1.0",
+  version = SHELL_VERSION,
 ): string {
   const today = new Date().toISOString().slice(0, 10);
   const title = `${progName}-${commandName}`.toUpperCase();

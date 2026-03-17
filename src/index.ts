@@ -45,5 +45,8 @@ export {
 } from "./errors.js";
 export type { ExitCode } from "./errors.js";
 
+// Logger
+export { setLogLevel, getLogLevel, debug, info, warn, error } from "./logger.js";
+
 // Security
 export { AuditLogger, setAuditLogger, getAuditLogger, AuthProvider, ConfigEncryptor, Sandbox } from "./security/index.js";

@@ -4,9 +4,21 @@
  * Protocol spec: CLI bootstrapping & command registration
  */
 
-import { Command } from "commander";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import * as path from "node:path";
+import { Command, CommanderError } from "commander";
 import { EXIT_CODES, exitCodeForError } from "./errors.js";
+import { resolveRefs } from "./ref-resolver.js";
+import { schemaToCliOptions } from "./schema-parser.js";
+import { checkApproval } from "./approval.js";
+import { formatExecResult } from "./output.js";
+import { setLogLevel } from "./logger.js";
 import type { Executor, ModuleDescriptor } from "./cli.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "../package.json"), "utf-8"));
+const VERSION: string = pkg.version;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,24 +55,28 @@ export interface OptionConfig {
  *
  * @param extensionsDir  Path to the extensions directory (default: ./extensions)
  * @param progName       Program name shown in help (default: apcore-cli)
- *
- * TODO: Wire up Registry, Executor, LazyModuleGroup, discovery, and shell commands.
  */
 export function createCli(
   extensionsDir?: string,
   progName?: string,
 ): Command {
-  const program = new Command(progName ?? "apcore-cli")
-    .version("0.1.0")
-    .description("apcore CLI — execute apcore modules from the command line");
+  // Resolve program name
+  const resolvedProgName = progName ?? path.basename(process.argv[1] ?? "apcore-cli") ?? "apcore-cli";
 
-  // TODO: Instantiate Registry from extensionsDir
-  // TODO: Instantiate Executor
-  // TODO: Register LazyModuleGroup commands
-  // TODO: Register discovery commands (list, describe)
-  // TODO: Register shell commands (completions, man)
+  // Resolve log level
+  const cliLogLevel = process.env.APCORE_CLI_LOGGING_LEVEL ?? process.env.APCORE_LOGGING_LEVEL ?? "WARNING";
+  setLogLevel(cliLogLevel);
 
-  void extensionsDir; // placeholder
+  const program = new Command(resolvedProgName)
+    .exitOverride()
+    .version(VERSION, "--version", `Show ${resolvedProgName} version`)
+    .description("apcore CLI — execute apcore modules from the command line")
+    .option("--extensions-dir <path>", "Path to extensions directory")
+    .option("--log-level <level>", "Logging level (DEBUG|INFO|WARNING|ERROR)", "WARNING");
+
+  // NOTE: Full registry/executor wiring requires apcore-js to be available.
+  // For now, extensions-dir is accepted but not wired to a real registry.
+  void extensionsDir;
 
   return program;
 }
@@ -71,8 +87,6 @@ export function createCli(
 
 /**
  * Parse argv and run the CLI. Handles top-level error catching and exit codes.
- *
- * TODO: Implement full error handling with exit code mapping.
  */
 export function main(progName?: string): void {
   const program = createCli(undefined, progName);
@@ -80,7 +94,14 @@ export function main(progName?: string): void {
   try {
     program.parse(process.argv);
   } catch (error: unknown) {
+    if (error instanceof CommanderError) {
+      // Commander already printed the error message
+      process.exit(error.exitCode);
+    }
     const code = exitCodeForError(error);
+    if (error instanceof Error) {
+      process.stderr.write(`Error: ${error.message}\n`);
+    }
     process.exit(code);
   }
 }
@@ -91,15 +112,104 @@ export function main(progName?: string): void {
 
 /**
  * Build a Commander Command for a single apcore module.
- *
- * TODO: Implement schema-to-options mapping and execution wiring.
  */
 export function buildModuleCommand(
   moduleDef: ModuleDescriptor,
   executor: Executor,
 ): Command {
-  const cmd = new Command(moduleDef.id).description(moduleDef.description);
-  void executor; // placeholder
+  const moduleId = moduleDef.id;
+  let resolvedSchema: Record<string, unknown> = {};
+  let schemaOptions: OptionConfig[] = [];
+
+  // Resolve schema
+  const inputSchema = moduleDef.inputSchema;
+  if (inputSchema && typeof inputSchema === "object" && inputSchema.properties) {
+    try {
+      resolvedSchema = resolveRefs(inputSchema, 32, moduleId);
+    } catch {
+      resolvedSchema = inputSchema;
+    }
+    schemaOptions = schemaToCliOptions(resolvedSchema);
+  }
+
+  const cmd = new Command(moduleId).description(moduleDef.description);
+
+  // Built-in options
+  cmd.option("--input <source>", "Read input from STDIN ('-')");
+  cmd.option("-y, --yes", "Bypass approval prompts", false);
+  cmd.option("--large-input", "Allow STDIN input larger than 10MB", false);
+  cmd.option("--format <format>", "Output format (json|table)");
+  cmd.option("--sandbox", "Run module in subprocess sandbox", false);
+
+  // Schema-generated options
+  for (const opt of schemaOptions) {
+    if (opt.parseArg) {
+      cmd.option(opt.flags, opt.description, opt.parseArg, opt.defaultValue);
+    } else {
+      cmd.option(opt.flags, opt.description, opt.defaultValue);
+    }
+  }
+
+  // Action callback
+  cmd.action(async (options: Record<string, unknown>) => {
+    // Pop built-in options
+    const stdinFlag = options.input as string | undefined;
+    const autoApprove = options.yes as boolean;
+    const largeInput = options.largeInput as boolean;
+    const outputFormat = options.format as string | undefined;
+    const sandboxEnabled = options.sandbox as boolean;
+
+    // Remove built-in keys from options to get schema kwargs
+    const schemaKwargs: Record<string, unknown> = {};
+    const builtinKeys = new Set(["input", "yes", "largeInput", "format", "sandbox"]);
+    for (const [k, v] of Object.entries(options)) {
+      if (!builtinKeys.has(k)) {
+        schemaKwargs[k] = v;
+      }
+    }
+
+    try {
+      // Collect and merge input
+      const merged = await collectInput(stdinFlag, schemaKwargs, largeInput);
+
+      // Reconvert enum values
+      const reconverted = reconvertEnumValues(merged, schemaOptions);
+
+      // Check approval
+      await checkApproval(moduleDef, autoApprove);
+
+      // Execute with timing
+      const { Sandbox } = await import("./security/index.js");
+      const sandbox = new Sandbox(sandboxEnabled);
+      const startTime = performance.now();
+      const result = await sandbox.execute(moduleId, reconverted, executor);
+      const durationMs = Math.round(performance.now() - startTime);
+
+      // Audit log (success)
+      const { getAuditLogger } = await import("./security/audit.js");
+      const auditLogger = getAuditLogger();
+      if (auditLogger) {
+        auditLogger.logExecution(moduleId, reconverted, "success", 0, durationMs);
+      }
+
+      // Format output
+      formatExecResult(result, outputFormat);
+    } catch (err: unknown) {
+      // Audit log (error)
+      const { getAuditLogger } = await import("./security/audit.js");
+      const auditLogger = getAuditLogger();
+      const code = exitCodeForError(err);
+      if (auditLogger) {
+        auditLogger.logExecution(moduleId, {}, "error", code, 0);
+      }
+
+      if (err instanceof Error) {
+        process.stderr.write(`Error: ${err.message}\n`);
+      }
+      process.exit(code);
+    }
+  });
+
   return cmd;
 }
 
@@ -190,23 +300,31 @@ export async function collectInput(
 }
 
 /**
- * Read all data from stdin.
+ * Read all data from stdin with proper cleanup.
  */
 function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    process.stdin.on("data", (chunk: Buffer) => chunks.push(chunk));
-    process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-    process.stdin.on("error", (err: Error) => reject(err));
+    const onData = (chunk: Buffer) => chunks.push(chunk);
+    const onEnd = () => {
+      cleanup();
+      resolve(Buffer.concat(chunks).toString("utf-8"));
+    };
+    const onError = (err: Error) => {
+      cleanup();
+      reject(err);
+    };
+    const cleanup = () => {
+      process.stdin.removeListener("data", onData);
+      process.stdin.removeListener("end", onEnd);
+      process.stdin.removeListener("error", onError);
+    };
+    process.stdin.on("data", onData);
+    process.stdin.on("end", onEnd);
+    process.stdin.on("error", onError);
     process.stdin.resume();
   });
 }
-
-// ---------------------------------------------------------------------------
-// resolveFormat — re-export from output.ts
-// ---------------------------------------------------------------------------
-
-export { resolveFormat } from "./output.js";
 
 // ---------------------------------------------------------------------------
 // reconvertEnumValues
