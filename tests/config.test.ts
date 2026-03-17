@@ -45,7 +45,7 @@ describe("ConfigResolver", () => {
       mockFileNotFound();
       const resolver = new ConfigResolver();
       expect(resolver.resolve("extensions.root")).toBe("./extensions");
-      expect(resolver.resolve("logging.level")).toBe("INFO");
+      expect(resolver.resolve("logging.level")).toBe("WARNING");
       expect(resolver.resolve("sandbox.enabled")).toBe(false);
       expect(resolver.resolve("cli.stdinBufferLimit")).toBe(10_485_760);
       expect(resolver.resolve("cli.autoApprove")).toBe(false);

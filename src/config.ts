@@ -14,7 +14,7 @@ import yaml from "js-yaml";
 /** Default configuration values. */
 export const DEFAULTS: Record<string, unknown> = {
   "extensions.root": "./extensions",
-  "logging.level": "INFO",
+  "logging.level": "WARNING",
   "sandbox.enabled": false,
   "cli.stdinBufferLimit": 10_485_760,
   "cli.autoApprove": false,
