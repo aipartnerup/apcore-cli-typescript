@@ -95,7 +95,7 @@ describe("boolean and enum handling", () => {
 describe("help text and collisions", () => {
   it("extracts help from x-llm-description (preferred)");
   it("falls back to description");
-  it("truncates help text at 200 chars");
+  it("truncates help text at 1000 chars (default)");
   it("returns undefined help when no description");
   it("exits 48 on flag name collision");
   it("exits 2 on reserved name collision (input, yes, format, sandbox, largeInput)");
@@ -103,7 +103,7 @@ describe("help text and collisions", () => {
 ```
 
 **Implementation:**
-- `extractHelp(propSchema)` → check `x-llm-description`, then `description`, truncate at 200
+- `extractHelp(propSchema, maxLength)` → check `x-llm-description`, then `description`, truncate at configurable limit (default 1000)
 - Collision map: track `flagName → propName`, error on duplicate
 - Reserved names: `input`, `yes`, `largeInput`, `format`, `sandbox`
 

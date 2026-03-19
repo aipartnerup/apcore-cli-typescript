@@ -18,6 +18,7 @@ export const DEFAULTS: Record<string, unknown> = {
   "sandbox.enabled": false,
   "cli.stdin_buffer_limit": 10_485_760,
   "cli.auto_approve": false,
+  "cli.help_text_max_length": 1000,
 };
 
 // ---------------------------------------------------------------------------

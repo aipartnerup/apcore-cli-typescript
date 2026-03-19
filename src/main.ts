@@ -116,6 +116,7 @@ export function main(progName?: string): void {
 export function buildModuleCommand(
   moduleDef: ModuleDescriptor,
   executor: Executor,
+  helpTextMaxLength = 1000,
 ): Command {
   const moduleId = moduleDef.id;
   let resolvedSchema: Record<string, unknown> = {};
@@ -129,7 +130,7 @@ export function buildModuleCommand(
     } catch {
       resolvedSchema = inputSchema;
     }
-    schemaOptions = schemaToCliOptions(resolvedSchema);
+    schemaOptions = schemaToCliOptions(resolvedSchema, helpTextMaxLength);
   }
 
   const cmd = new Command(moduleId).description(moduleDef.description);

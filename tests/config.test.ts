@@ -63,6 +63,7 @@ describe("ConfigResolver", () => {
       expect(DEFAULTS).toHaveProperty("sandbox.enabled");
       expect(DEFAULTS).toHaveProperty("cli.stdin_buffer_limit");
       expect(DEFAULTS).toHaveProperty("cli.auto_approve");
+      expect(DEFAULTS).toHaveProperty("cli.help_text_max_length");
     });
   });
 

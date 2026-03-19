@@ -69,9 +69,22 @@ describe("extractHelp()", () => {
     expect(extractHelp({ description: "Normal desc" })).toBe("Normal desc");
   });
 
-  it("truncates help text at 200 chars", () => {
-    const longText = "a".repeat(250);
+  it("truncates help text at 1000 chars (default)", () => {
+    const longText = "a".repeat(1100);
     const result = extractHelp({ description: longText });
+    expect(result!.length).toBe(1000);
+    expect(result!.endsWith("...")).toBe(true);
+  });
+
+  it("does not truncate text within default limit", () => {
+    const text = "a".repeat(999);
+    const result = extractHelp({ description: text });
+    expect(result).toBe(text);
+  });
+
+  it("truncates at custom maxLength", () => {
+    const longText = "a".repeat(300);
+    const result = extractHelp({ description: longText }, 200);
     expect(result!.length).toBe(200);
     expect(result!.endsWith("...")).toBe(true);
   });

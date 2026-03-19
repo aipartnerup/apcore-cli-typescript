@@ -49,7 +49,7 @@ export function mapType(propName: string, propSchema: Record<string, unknown>): 
 /**
  * Extract help text from schema property, preferring x-llm-description.
  */
-export function extractHelp(propSchema: Record<string, unknown>): string | undefined {
+export function extractHelp(propSchema: Record<string, unknown>, maxLength = 1000): string | undefined {
   let text = propSchema["x-llm-description"] as string | undefined;
   if (!text) {
     text = propSchema.description as string | undefined;
@@ -57,8 +57,8 @@ export function extractHelp(propSchema: Record<string, unknown>): string | undef
   if (!text) {
     return undefined;
   }
-  if (text.length > 200) {
-    return text.slice(0, 197) + "...";
+  if (maxLength > 0 && text.length > maxLength) {
+    return text.slice(0, maxLength - 3) + "...";
   }
   return text;
 }
@@ -76,6 +76,7 @@ const RESERVED_NAMES = new Set(["input", "yes", "large_input", "format", "sandbo
  */
 export function schemaToCliOptions(
   schema: Record<string, unknown>,
+  maxHelpLength = 1000,
 ): OptionConfig[] {
   const properties = (schema.properties ?? {}) as Record<
     string,
@@ -107,7 +108,7 @@ export function schemaToCliOptions(
 
     const typeResult = mapType(propName, propSchema);
     const isRequired = requiredList.includes(propName);
-    const helpBase = extractHelp(propSchema);
+    const helpBase = extractHelp(propSchema, maxHelpLength);
     const helpText = isRequired
       ? (helpBase ? helpBase + " " : "") + "[required]"
       : helpBase ?? "";

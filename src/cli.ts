@@ -54,11 +54,13 @@ export interface ModuleDescriptor {
 export class LazyModuleGroup {
   private readonly registry: Registry;
   readonly executor: Executor;
+  private readonly helpTextMaxLength: number;
   private commandCache: Map<string, Command> = new Map();
 
-  constructor(registry: Registry, executor: Executor) {
+  constructor(registry: Registry, executor: Executor, helpTextMaxLength = 1000) {
     this.registry = registry;
     this.executor = executor;
+    this.helpTextMaxLength = helpTextMaxLength;
   }
 
   /**
@@ -86,7 +88,7 @@ export class LazyModuleGroup {
       return null;
     }
 
-    const cmd = buildModuleCommand(moduleDef, this.executor);
+    const cmd = buildModuleCommand(moduleDef, this.executor, this.helpTextMaxLength);
     this.commandCache.set(cmdName, cmd);
     return cmd;
   }

@@ -5,6 +5,23 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-19
+
+### Changed
+- Help text truncation limit increased from 200 to 1000 characters (configurable via `cli.help_text_max_length` config key)
+- `extractHelp`: added `maxLength` parameter (default 1000) (`schema-parser.ts`)
+- `schemaToCliOptions`: added `maxHelpLength` parameter (default 1000) (`schema-parser.ts`)
+- `buildModuleCommand`: added `helpTextMaxLength` parameter (default 1000), threaded through to schema parser (`main.ts`)
+- `LazyModuleGroup`: constructor accepts `helpTextMaxLength` (default 1000), passes to `buildModuleCommand` (`cli.ts`)
+
+### Added
+- `cli.help_text_max_length` config key (default: 1000) in `DEFAULTS` (`config.ts`)
+- `APCORE_CLI_HELP_TEXT_MAX_LENGTH` environment variable support
+- Test: "truncates help text at 1000 chars (default)"
+- Test: "does not truncate text within default limit"
+- Test: "truncates at custom maxLength"
+- 183 tests (up from 181)
+
 ## [0.2.0] - 2026-03-18
 
 ### Added
