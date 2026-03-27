@@ -49,7 +49,7 @@ Terminal adapter for apcore. Execute AI-Perceivable modules from the command lin
 pnpm add apcore-cli apcore-js
 ```
 
-Requires Node.js 18+ and `apcore-js >= 0.13.0`.
+Requires Node.js 18+ and `apcore-js >= 0.14.0`.
 
 ## Quick Start
 

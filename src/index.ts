@@ -5,12 +5,18 @@
  */
 
 // Core CLI
-export { createCli, main, buildModuleCommand, validateModuleId, collectInput, reconvertEnumValues } from "./main.js";
+export { createCli, main, buildModuleCommand, validateModuleId, collectInput, reconvertEnumValues, applyToolkitIntegration } from "./main.js";
 export type { OptionConfig } from "./main.js";
 
 // Lazy module loading
-export { LazyModuleGroup } from "./cli.js";
+export { LazyModuleGroup, GroupedModuleGroup, LazyGroup, BUILTIN_COMMANDS } from "./cli.js";
 export type { Registry, Executor, ModuleDescriptor } from "./cli.js";
+
+// Display helpers
+export { getDisplay, getCliDisplayFields } from "./display-helpers.js";
+
+// Init command
+export { registerInitCommand } from "./init-cmd.js";
 
 // Configuration
 export { ConfigResolver, DEFAULTS } from "./config.js";

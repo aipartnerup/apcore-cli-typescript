@@ -42,6 +42,20 @@ function generateBashCompletion(progName: string): string {
   const moduleListCmd =
     `${quoted} list --format json 2>/dev/null` +
     ` | node -e "process.stdin.on('data',d=>{JSON.parse(d).forEach(m=>console.log(m.id))})" 2>/dev/null`;
+  const groupsAndTopCmd =
+    `${quoted} list --format json 2>/dev/null | node -e "\n` +
+    `const m=require('fs').readFileSync('/dev/stdin','utf8');\n` +
+    `const ids=JSON.parse(m).map(x=>x.id);\n` +
+    `const g=new Set(),t=[];\n` +
+    `ids.forEach(i=>{if(i.includes('.'))g.add(i.split('.')[0]);else t.push(i)});\n` +
+    `console.log([...g].sort().concat(t.sort()).join(' '))\n` +
+    `" 2>/dev/null`;
+  const groupCmdsCmd =
+    `${quoted} list --format json 2>/dev/null | node -e "\n` +
+    `const m=require('fs').readFileSync('/dev/stdin','utf8');\n` +
+    `const g=process.env._APCORE_GRP;\n` +
+    `JSON.parse(m).map(x=>x.id).filter(i=>i.includes('.')&&i.split('.')[0]===g).forEach(i=>console.log(i.split('.',2)[1]))\n` +
+    `" 2>/dev/null`;
 
   return (
     `${fn}() {\n` +
@@ -51,14 +65,21 @@ function generateBashCompletion(progName: string): string {
     `    prev="\${COMP_WORDS[COMP_CWORD-1]}"\n` +
     `\n` +
     `    if [[ \${COMP_CWORD} -eq 1 ]]; then\n` +
-    `        opts="list describe completion man"\n` +
-    `        COMPREPLY=( $(compgen -W "\${opts}" -- \${cur}) )\n` +
+    `        opts="completion describe exec init list man"\n` +
+    `        local groups_and_top=$(${groupsAndTopCmd})\n` +
+    `        COMPREPLY=( $(compgen -W "\${opts} \${groups_and_top}" -- \${cur}) )\n` +
     `        return 0\n` +
     `    fi\n` +
     `\n` +
-    `    if [[ "\${COMP_WORDS[1]}" == "exec" && \${COMP_CWORD} -eq 2 ]]; then\n` +
-    `        local modules=$(${moduleListCmd})\n` +
-    `        COMPREPLY=( $(compgen -W "\${modules}" -- \${cur}) )\n` +
+    `    if [[ \${COMP_CWORD} -eq 2 ]]; then\n` +
+    `        if [[ "\${COMP_WORDS[1]}" == "exec" ]]; then\n` +
+    `            local modules=$(${moduleListCmd})\n` +
+    `            COMPREPLY=( $(compgen -W "\${modules}" -- \${cur}) )\n` +
+    `            return 0\n` +
+    `        fi\n` +
+    `        export _APCORE_GRP="\${COMP_WORDS[1]}"\n` +
+    `        local group_cmds=$(${groupCmdsCmd})\n` +
+    `        COMPREPLY=( $(compgen -W "\${group_cmds}" -- \${cur}) )\n` +
     `        return 0\n` +
     `    fi\n` +
     `}\n` +
@@ -72,6 +93,20 @@ function generateZshCompletion(progName: string): string {
   const moduleListCmd =
     `${quoted} list --format json 2>/dev/null` +
     ` | node -e "process.stdin.on('data',d=>{JSON.parse(d).forEach(m=>console.log(m.id))})" 2>/dev/null`;
+  const groupsAndTopCmd =
+    `${quoted} list --format json 2>/dev/null | node -e "\n` +
+    `const m=require('fs').readFileSync('/dev/stdin','utf8');\n` +
+    `const ids=JSON.parse(m).map(x=>x.id);\n` +
+    `const g=new Set(),t=[];\n` +
+    `ids.forEach(i=>{if(i.includes('.'))g.add(i.split('.')[0]);else t.push(i)});\n` +
+    `console.log([...g].sort().concat(t.sort()).join(' '))\n` +
+    `" 2>/dev/null`;
+  const groupCmdsCmd =
+    `${quoted} list --format json 2>/dev/null | node -e "\n` +
+    `const m=require('fs').readFileSync('/dev/stdin','utf8');\n` +
+    `const g=process.env._APCORE_GRP;\n` +
+    `JSON.parse(m).map(x=>x.id).filter(i=>i.includes('.')&&i.split('.')[0]===g).forEach(i=>console.log(i.split('.',2)[1]))\n` +
+    `" 2>/dev/null`;
 
   return (
     `#compdef ${progName}\n` +
@@ -82,6 +117,7 @@ function generateZshCompletion(progName: string): string {
     `        'list:List available modules'\n` +
     `        'describe:Show module metadata and schema'\n` +
     `        'completion:Generate shell completion script'\n` +
+    `        'init:Scaffolding commands'\n` +
     `        'man:Generate man page'\n` +
     `    )\n` +
     `\n` +
@@ -92,6 +128,9 @@ function generateZshCompletion(progName: string): string {
     `    case "$state" in\n` +
     `        command)\n` +
     `            _describe -t commands '${progName} commands' commands\n` +
+    `            local -a groups_and_top\n` +
+    `            groups_and_top=($(${groupsAndTopCmd}))\n` +
+    `            compadd -a groups_and_top\n` +
     `            ;;\n` +
     `        args)\n` +
     `            case "\${words[1]}" in\n` +
@@ -99,6 +138,12 @@ function generateZshCompletion(progName: string): string {
     `                    local modules\n` +
     `                    modules=($(${moduleListCmd}))\n` +
     `                    compadd -a modules\n` +
+    `                    ;;\n` +
+    `                *)\n` +
+    `                    export _APCORE_GRP="\${words[1]}"\n` +
+    `                    local -a group_cmds\n` +
+    `                    group_cmds=($(${groupCmdsCmd}))\n` +
+    `                    compadd -a group_cmds\n` +
     `                    ;;\n` +
     `            esac\n` +
     `            ;;\n` +
@@ -114,6 +159,13 @@ function generateFishCompletion(progName: string): string {
   const moduleListCmd =
     `${quoted} list --format json 2>/dev/null` +
     ` | node -e \\"process.stdin.on('data',d=>{JSON.parse(d).forEach(m=>console.log(m.id))})\\" 2>/dev/null`;
+  const groupsAndTopCmd =
+    `${quoted} list --format json 2>/dev/null | node -e \\"` +
+    `const m=require('fs').readFileSync('/dev/stdin','utf8');` +
+    `const ids=JSON.parse(m).map(x=>x.id);` +
+    `const g=new Set(),t=[];` +
+    `ids.forEach(i=>{if(i.includes('.'))g.add(i.split('.')[0]);else t.push(i)});` +
+    `console.log([...g].sort().concat(t.sort()).join('\\\\n'))\\" 2>/dev/null`;
 
   return (
     `# Fish completions for ${progName}\n` +
@@ -124,10 +176,28 @@ function generateFishCompletion(progName: string): string {
     `complete -c ${quoted} -n "__fish_use_subcommand"` +
     ` -a completion -d "Generate shell completion script"\n` +
     `complete -c ${quoted} -n "__fish_use_subcommand"` +
+    ` -a init -d "Scaffolding commands"\n` +
+    `complete -c ${quoted} -n "__fish_use_subcommand"` +
     ` -a man -d "Generate man page"\n` +
+    `complete -c ${quoted} -n "__fish_use_subcommand"` +
+    ` -a "(${groupsAndTopCmd})" -d "Module group"\n` +
     `\n` +
     `complete -c ${quoted} -n "__fish_seen_subcommand_from exec"` +
-    ` -a "(${moduleListCmd})"\n`
+    ` -a "(${moduleListCmd})"\n` +
+    `\n` +
+    `function __apcore_group_cmds\n` +
+    `    set -l grp (commandline -opc)[2]\n` +
+    `    set -x _APCORE_GRP $grp\n` +
+    `    ${quoted} list --format json 2>/dev/null | node -e "\n` +
+    `const m=require('fs').readFileSync('/dev/stdin','utf8');\n` +
+    `const g=process.env._APCORE_GRP;\n` +
+    `JSON.parse(m).map(x=>x.id).filter(i=>i.includes('.')&&i.split('.')[0]===g).forEach(i=>console.log(i.split('.',2)[1]))\n` +
+    `" 2>/dev/null\n` +
+    `end\n` +
+    `\n` +
+    `# Group subcommand completion — matches when position 1 is not a builtin\n` +
+    `complete -c ${quoted} -n "not __fish_use_subcommand; and not __fish_seen_subcommand_from list describe completion init man exec"` +
+    ` -a "(__apcore_group_cmds)"\n`
   );
 }
 
@@ -241,6 +311,11 @@ function generateManPage(
     "Global apcore logging verbosity. One of: DEBUG, INFO, WARNING, ERROR. " +
       "Used as fallback when \\fBAPCORE_CLI_LOGGING_LEVEL\\fR is not set. Default: WARNING.",
   );
+  sections.push(".TP");
+  sections.push("\\fBAPCORE_AUTH_API_KEY\\fR");
+  sections.push(
+    "API key for authenticating with the apcore registry.",
+  );
 
   sections.push(".SH EXIT CODES");
   const exitCodes: [string, string][] = [
@@ -317,7 +392,7 @@ export function registerShellCommands(
     .description("Generate a roff man page for COMMAND and print it to stdout.")
     .argument("<command>", "Command to generate man page for")
     .action((commandName: string) => {
-      const knownBuiltins = new Set(["list", "describe", "completion", "man"]);
+      const knownBuiltins = new Set(["completion", "describe", "exec", "init", "list", "man"]);
       const cmd = cli.commands.find((c) => c.name() === commandName) ?? null;
 
       if (!cmd && !knownBuiltins.has(commandName)) {

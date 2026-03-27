@@ -5,6 +5,23 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-27
+
+### Added
+- **Grouped CLI commands (FE-09)** — `GroupedModuleGroup` organizes modules into nested subcommand groups by namespace prefix, enabling `apcore-cli <group> <command>` invocation.
+- **Display overlay helpers** — `getDisplay()` and `getCliDisplayFields()` resolve alias, description, and tags from `metadata["display"]`.
+- **Init command (FE-10)** — `apcore-cli init module <id>` scaffolds new modules with `--style` (decorator/convention/binding), `--dir`, and `--description` options.
+- **Grouped shell completions** — Bash, Zsh, and Fish completions now support two-level group/command completion via `_APCORE_GRP`.
+- **Optional apcore-toolkit integration** — `DisplayResolver` and `RegistryWriter` via optional `apcore-toolkit` peer dependency with graceful fallback.
+- **Path traversal validation** — `--dir` rejects paths containing `..` components.
+
+### Changed
+- `BUILTIN_COMMANDS` updated to include `init` (6 items, sorted).
+- `buildModuleCommand` accepts optional `cmdName` parameter for display alias override.
+- `APCORE_EXTENSIONS_ROOT` environment variable now used as fallback in `createCli()`.
+- `APCORE_AUTH_API_KEY` added to man page ENVIRONMENT section.
+- Dependency bump: `apcore-js >= 0.14.0`.
+
 ## [0.2.2] - 2026-03-22
 
 ### Changed

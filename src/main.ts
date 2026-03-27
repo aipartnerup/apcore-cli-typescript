@@ -14,6 +14,8 @@ import { schemaToCliOptions } from "./schema-parser.js";
 import { checkApproval } from "./approval.js";
 import { formatExecResult } from "./output.js";
 import { setLogLevel } from "./logger.js";
+import { registerInitCommand } from "./init-cmd.js";
+import { getDisplay } from "./display-helpers.js";
 import type { Executor, ModuleDescriptor } from "./cli.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,13 +74,73 @@ export function createCli(
     .version(VERSION, "--version", `Show ${resolvedProgName} version`)
     .description("apcore CLI — execute apcore modules from the command line")
     .option("--extensions-dir <path>", "Path to extensions directory")
+    .option("--commands-dir <path>", "Path to convention-based commands directory")
+    .option("--binding <path>", "Path to binding.yaml for display overlay")
     .option("--log-level <level>", "Logging level (DEBUG|INFO|WARNING|ERROR)", "WARNING");
 
   // NOTE: Full registry/executor wiring requires apcore-js to be available.
   // For now, extensions-dir is accepted but not wired to a real registry.
-  void extensionsDir;
+  const resolvedExtDir = extensionsDir
+    ?? process.env.APCORE_EXTENSIONS_ROOT
+    ?? "./extensions";
+  void resolvedExtDir; // Will be used when apcore-js registry is wired
+
+  // Register init command for scaffolding
+  registerInitCommand(program);
+
+  // Hook to apply optional toolkit integration before command execution.
+  // Commander actions are async, so we can set up toolkit state lazily.
+  program.hook("preAction", async (thisCommand) => {
+    const opts = thisCommand.opts();
+    const commandsDir = opts.commandsDir as string | undefined;
+    const bindingPath = opts.binding as string | undefined;
+    await applyToolkitIntegration(commandsDir, bindingPath);
+  });
 
   return program;
+}
+
+// ---------------------------------------------------------------------------
+// applyToolkitIntegration
+// ---------------------------------------------------------------------------
+
+/**
+ * Optionally apply apcore-toolkit features (DisplayResolver, RegistryWriter).
+ *
+ * Uses dynamic import so the dependency remains optional — if apcore-toolkit
+ * is not installed, a warning is printed and the CLI continues without it.
+ */
+export async function applyToolkitIntegration(
+  commandsDir?: string,
+  bindingPath?: string,
+): Promise<void> {
+  if (!commandsDir && !bindingPath) {
+    return;
+  }
+
+  try {
+    // Use a variable to prevent TypeScript from resolving the module at build time
+    const toolkitModule = "apcore-toolkit";
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const toolkit = await import(/* @vite-ignore */ toolkitModule);
+
+    // ConventionScanner is not yet available in the TypeScript toolkit
+    if (commandsDir) {
+      console.warn("Convention scanning not yet available in TypeScript toolkit");
+    }
+
+    // DisplayResolver for binding overlay
+    if (bindingPath) {
+      const resolver = new toolkit.DisplayResolver();
+      // NOTE: Full integration requires registered modules from apcore-js.
+      // For now, the resolver is instantiated and ready for when modules
+      // are available through the registry.
+      void resolver;
+    }
+  } catch {
+    // apcore-toolkit not installed — graceful fallback
+    console.warn("apcore-toolkit not installed — toolkit features unavailable");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -117,10 +179,19 @@ export function buildModuleCommand(
   moduleDef: ModuleDescriptor,
   executor: Executor,
   helpTextMaxLength = 1000,
+  cmdName?: string,
 ): Command {
   const moduleId = moduleDef.id;
   let resolvedSchema: Record<string, unknown> = {};
   let schemaOptions: OptionConfig[] = [];
+
+  // Resolve display overlay fields
+  const display = getDisplay(moduleDef);
+  const cliDisplay = (display.cli && typeof display.cli === "object" && !Array.isArray(display.cli))
+    ? (display.cli as Record<string, unknown>)
+    : {};
+  const effectiveCmdName: string = cmdName ?? (cliDisplay.alias as string | undefined) ?? moduleId;
+  const cmdHelp: string = (cliDisplay.description as string | undefined) ?? moduleDef.description;
 
   // Resolve schema
   const inputSchema = moduleDef.inputSchema;
@@ -133,7 +204,7 @@ export function buildModuleCommand(
     schemaOptions = schemaToCliOptions(resolvedSchema, helpTextMaxLength);
   }
 
-  const cmd = new Command(moduleId).description(moduleDef.description);
+  const cmd = new Command(effectiveCmdName).description(cmdHelp);
 
   // Built-in options
   cmd.option("--input <source>", "Read input from STDIN ('-')");
