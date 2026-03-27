@@ -7,26 +7,30 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const DECORATOR_TEMPLATE = `\
-"""Module: {moduleId}"""
+import { module } from "apcore-js";
+import { Type } from "@sinclair/typebox";
 
-from apcore import module
-
-
-@module(id="{moduleId}", description="{description}")
-def {funcName}() -> dict:
-    """{description}"""
-    # TODO: implement
-    return {{"status": "ok"}}
+export const {varName} = module({
+  id: "{moduleId}",
+  description: "{description}",
+  inputSchema: Type.Object({}),
+  outputSchema: Type.Object({ status: Type.String() }),
+  execute: (_inputs) => {
+    // TODO: implement
+    return { status: "ok" };
+  },
+});
 `;
 
 const CONVENTION_TEMPLATE = `\
-"""{description}"""
-
+/**
+ * {description}
+ */
 {cliGroupLine}
-def {funcName}() -> dict:
-    """{description}"""
-    # TODO: implement
-    return {{"status": "ok"}}
+export function {funcName}(): Record<string, unknown> {
+  // TODO: implement
+  return { status: "ok" };
+}
 `;
 
 const BINDING_TEMPLATE = `\
@@ -106,11 +110,13 @@ function createDecoratorModule(
   outputDir: string,
 ): void {
   fs.mkdirSync(outputDir, { recursive: true });
-  const filename = moduleId.replace(/\./g, "_") + ".py";
+  const filename = moduleId.replace(/\./g, "_") + ".ts";
   const filepath = path.join(outputDir, filename);
 
+  const varName = funcName + "Module";
   const content = renderTemplate(DECORATOR_TEMPLATE, {
     moduleId,
+    varName,
     funcName,
     description,
   });
@@ -134,18 +140,18 @@ function createConventionModule(
 
   let filename: string;
   if (prefixParts.length > 1) {
-    filename = prefixParts[prefixParts.length - 1] + ".py";
+    filename = prefixParts[prefixParts.length - 1] + ".ts";
   } else {
-    filename = prefix + ".py";
+    filename = prefix + ".ts";
   }
   // If the file would be the same as the function name, use prefix as filename
   if (prefix === funcName) {
-    filename = prefix + ".py";
+    filename = prefix + ".ts";
   }
   const filepath = path.join(dirPath, filename);
 
   const cliGroupLine = moduleId.includes(".")
-    ? `CLI_GROUP = "${prefixParts[0]}"\n`
+    ? `export const CLI_GROUP = "${prefixParts[0]}";\n`
     : "";
 
   const content = renderTemplate(CONVENTION_TEMPLATE, {
@@ -180,13 +186,14 @@ function createBindingModule(
   // Also create the target function file
   const baseSrc = "commands";
   fs.mkdirSync(baseSrc, { recursive: true });
-  const srcFile = path.join(baseSrc, prefix.replace(/\./g, "_") + ".py");
+  const srcFile = path.join(baseSrc, prefix.replace(/\./g, "_") + ".ts");
   if (!fs.existsSync(srcFile)) {
     const srcContent =
-      `def ${funcName}() -> dict:\n` +
-      `    """${description}"""\n` +
-      "    # TODO: implement\n" +
-      '    return {"status": "ok"}\n';
+      `export function ${funcName}(): Record<string, unknown> {\n` +
+      `  /** ${description} */\n` +
+      "  // TODO: implement\n" +
+      '  return { status: "ok" };\n' +
+      "}\n";
     fs.writeFileSync(srcFile, srcContent);
     process.stdout.write(`Created ${srcFile}\n`);
   }

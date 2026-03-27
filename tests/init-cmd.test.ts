@@ -63,7 +63,7 @@ describe("init module command", () => {
     expect(stdoutSpy).toHaveBeenCalled();
     const calls = stdoutSpy.mock.calls.map((c) => String(c[0]));
     expect(calls.some((c) => c.includes("Created"))).toBe(true);
-    const pyFiles = findFiles(tmpDir, ".py");
+    const pyFiles = findFiles(tmpDir, ".ts");
     expect(pyFiles.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -71,11 +71,11 @@ describe("init module command", () => {
     const cli = makeCli();
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     cli.parse(["node", "test", "init", "module", "ops.deploy", "--style", "decorator", "--dir", tmpDir]);
-    const pyFiles = findFiles(tmpDir, ".py");
+    const pyFiles = findFiles(tmpDir, ".ts");
     expect(pyFiles.length).toBe(1);
     const content = fs.readFileSync(pyFiles[0], "utf-8");
-    expect(content).toContain("@module");
-    expect(content).toContain('id="ops.deploy"');
+    expect(content).toContain("module(");
+    expect(content).toContain('"ops.deploy"');
   });
 
   it("binding style creates YAML", () => {
@@ -92,7 +92,7 @@ describe("init module command", () => {
     const cli = makeCli();
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     cli.parse(["node", "test", "init", "module", "ops.deploy", "--dir", tmpDir]);
-    const pyFiles = findFiles(tmpDir, ".py");
+    const pyFiles = findFiles(tmpDir, ".ts");
     const content = fs.readFileSync(pyFiles[0], "utf-8");
     expect(content).toContain("CLI_GROUP");
   });
@@ -105,7 +105,7 @@ describe("init module command", () => {
       "--dir", tmpDir,
       "-d", "Deploy to production",
     ]);
-    const pyFiles = findFiles(tmpDir, ".py");
+    const pyFiles = findFiles(tmpDir, ".ts");
     const content = fs.readFileSync(pyFiles[0], "utf-8");
     expect(content).toContain("Deploy to production");
   });
@@ -139,7 +139,7 @@ describe("init module command", () => {
     const cli = makeCli();
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     cli.parse(["node", "test", "init", "module", "health", "--dir", tmpDir]);
-    const pyFiles = findFiles(tmpDir, ".py");
+    const pyFiles = findFiles(tmpDir, ".ts");
     expect(pyFiles.length).toBe(1);
     const content = fs.readFileSync(pyFiles[0], "utf-8");
     expect(content).not.toContain("CLI_GROUP");
