@@ -23,6 +23,11 @@ afterEach(() => {
   vi.restoreAllMocks();
   // Clean up tmp dir
   fs.rmSync(tmpDir, { recursive: true, force: true });
+  // Clean up companion files created by binding style tests
+  const companionDir = path.join(process.cwd(), "commands");
+  if (fs.existsSync(companionDir)) {
+    fs.rmSync(companionDir, { recursive: true, force: true });
+  }
 });
 
 function makeCli(): Command {
