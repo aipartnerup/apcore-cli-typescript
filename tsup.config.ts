@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts", "bin/apcore-cli.ts"],
+  entry: { index: "src/index.ts", "bin/apcore-cli": "bin/apcore-cli.ts" },
   format: ["esm"],
   dts: true,
   sourcemap: true,
