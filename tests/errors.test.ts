@@ -111,4 +111,40 @@ describe("exitCodeForError", () => {
   it("maps unknown errors to exit code 1", () => {
     expect(exitCodeForError(new Error("unknown"))).toBe(EXIT_CODES.MODULE_EXECUTE_ERROR);
   });
+
+  // Config Bus error codes (apcore >= 0.15.0)
+  it("maps APPROVAL_PENDING to exit code 46", () => {
+    const err = Object.assign(new Error("test"), { code: "APPROVAL_PENDING" });
+    expect(exitCodeForError(err)).toBe(EXIT_CODES.APPROVAL_DENIED);
+  });
+
+  it("maps CONFIG_NAMESPACE_RESERVED to exit code 78", () => {
+    const err = Object.assign(new Error("test"), { code: "CONFIG_NAMESPACE_RESERVED" });
+    expect(exitCodeForError(err)).toBe(EXIT_CODES.CONFIG_NAMESPACE_RESERVED);
+  });
+
+  it("maps CONFIG_NAMESPACE_DUPLICATE to exit code 78", () => {
+    const err = Object.assign(new Error("test"), { code: "CONFIG_NAMESPACE_DUPLICATE" });
+    expect(exitCodeForError(err)).toBe(EXIT_CODES.CONFIG_NAMESPACE_DUPLICATE);
+  });
+
+  it("maps CONFIG_ENV_PREFIX_CONFLICT to exit code 78", () => {
+    const err = Object.assign(new Error("test"), { code: "CONFIG_ENV_PREFIX_CONFLICT" });
+    expect(exitCodeForError(err)).toBe(EXIT_CODES.CONFIG_ENV_PREFIX_CONFLICT);
+  });
+
+  it("maps CONFIG_MOUNT_ERROR to exit code 66", () => {
+    const err = Object.assign(new Error("test"), { code: "CONFIG_MOUNT_ERROR" });
+    expect(exitCodeForError(err)).toBe(EXIT_CODES.CONFIG_MOUNT_ERROR);
+  });
+
+  it("maps CONFIG_BIND_ERROR to exit code 65", () => {
+    const err = Object.assign(new Error("test"), { code: "CONFIG_BIND_ERROR" });
+    expect(exitCodeForError(err)).toBe(EXIT_CODES.CONFIG_BIND_ERROR);
+  });
+
+  it("maps ERROR_FORMATTER_DUPLICATE to exit code 70", () => {
+    const err = Object.assign(new Error("test"), { code: "ERROR_FORMATTER_DUPLICATE" });
+    expect(exitCodeForError(err)).toBe(EXIT_CODES.ERROR_FORMATTER_DUPLICATE);
+  });
 });

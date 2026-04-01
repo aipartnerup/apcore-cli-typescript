@@ -19,7 +19,49 @@ export const DEFAULTS: Record<string, unknown> = {
   "cli.stdin_buffer_limit": 10_485_760,
   "cli.auto_approve": false,
   "cli.help_text_max_length": 1000,
+  // Namespace-mode aliases (apcore >= 0.15.0 Config Bus)
+  "apcore-cli.stdin_buffer_limit": 10_485_760,
+  "apcore-cli.auto_approve": false,
+  "apcore-cli.help_text_max_length": 1000,
+  "apcore-cli.logging_level": "WARNING",
 };
+
+/** Namespace key ↔ legacy key mapping for backward compatibility. */
+const NAMESPACE_TO_LEGACY: Record<string, string> = {
+  "apcore-cli.stdin_buffer_limit": "cli.stdin_buffer_limit",
+  "apcore-cli.auto_approve": "cli.auto_approve",
+  "apcore-cli.help_text_max_length": "cli.help_text_max_length",
+  "apcore-cli.logging_level": "logging.level",
+};
+const LEGACY_TO_NAMESPACE: Record<string, string> = Object.fromEntries(
+  Object.entries(NAMESPACE_TO_LEGACY).map(([k, v]) => [v, k]),
+);
+
+/**
+ * Register the apcore-cli Config Bus namespace (apcore >= 0.15.0).
+ * Safe to call even when apcore-js is unavailable or < 0.15.0.
+ */
+export function registerConfigNamespace(): void {
+  try {
+    // Dynamic import to avoid hard failure when apcore-js is not available
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Config } = require("apcore-js");
+    if (typeof Config?.registerNamespace === "function") {
+      Config.registerNamespace({
+        name: "apcore-cli",
+        envPrefix: "APCORE_CLI",
+        defaults: {
+          stdin_buffer_limit: 10_485_760,
+          auto_approve: false,
+          help_text_max_length: 1000,
+          logging_level: "WARNING",
+        },
+      });
+    }
+  } catch {
+    // apcore-js not installed or < 0.15.0 — graceful no-op
+  }
+}
 
 // ---------------------------------------------------------------------------
 // ConfigResolver
@@ -64,10 +106,17 @@ export class ConfigResolver {
       }
     }
 
-    // Tier 3: Config file
+    // Tier 3: Config file (try both namespace and legacy keys)
     const fileValue = this.resolveFromFile(key);
     if (fileValue !== undefined) {
       return fileValue;
+    }
+    const altKey = NAMESPACE_TO_LEGACY[key] ?? LEGACY_TO_NAMESPACE[key];
+    if (altKey) {
+      const altFileValue = this.resolveFromFile(altKey);
+      if (altFileValue !== undefined) {
+        return altFileValue;
+      }
     }
 
     // Tier 4: Defaults

@@ -19,7 +19,7 @@ export { getDisplay, getCliDisplayFields } from "./display-helpers.js";
 export { registerInitCommand } from "./init-cmd.js";
 
 // Configuration
-export { ConfigResolver, DEFAULTS } from "./config.js";
+export { ConfigResolver, DEFAULTS, registerConfigNamespace } from "./config.js";
 
 // Discovery
 export { registerDiscoveryCommands } from "./discovery.js";

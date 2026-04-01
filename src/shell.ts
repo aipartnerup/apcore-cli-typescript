@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
+import { spawnSync } from "node:child_process";
 import { Command, Help, Option } from "commander";
 import { EXIT_CODES } from "./errors.js";
 
@@ -516,8 +517,41 @@ export function configureManHelp(
   // Intercept help to output roff when --man is set
   program.addHelpText("beforeAll", () => {
     if (program.opts().man) {
-      process.stdout.write(buildProgramManPage(program, progName, version, description, docsUrl));
-      process.stdout.write("\n");
+      const roff = buildProgramManPage(program, progName, version, description, docsUrl) + "\n";
+
+      // If stdout is a TTY, render through a pager; otherwise output raw roff
+      // (allows piping/redirection like `reach --help --man > reach.1`)
+      if (process.stdout.isTTY) {
+        // Try mandoc first (available on macOS/BSD), then groff, then fall back to raw output
+        const pagers: Array<{ cmd: string; args: string[] }> = [
+          { cmd: "mandoc", args: ["-a"] },
+          { cmd: "groff",  args: ["-man", "-Tutf8"] },
+        ];
+        let rendered = false;
+        for (const { cmd, args } of pagers) {
+          const result = spawnSync(cmd, args, {
+            input: roff,
+            stdio: ["pipe", "pipe", "pipe"],
+            encoding: "utf-8",
+          });
+          if (result.status === 0 && result.stdout) {
+            const pager = process.env.PAGER || "less";
+            const pagerResult = spawnSync(pager, ["-R"], {
+              input: result.stdout,
+              stdio: ["pipe", "inherit", "inherit"],
+            });
+            if (pagerResult.status !== null) {
+              rendered = true;
+              break;
+            }
+          }
+        }
+        if (!rendered) {
+          process.stdout.write(roff);
+        }
+      } else {
+        process.stdout.write(roff);
+      }
       process.exit(0);
     }
     return "";

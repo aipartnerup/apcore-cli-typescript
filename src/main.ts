@@ -16,6 +16,8 @@ import { formatExecResult } from "./output.js";
 import { setLogLevel } from "./logger.js";
 import { registerInitCommand } from "./init-cmd.js";
 import { getDisplay } from "./display-helpers.js";
+import { registerConfigNamespace } from "./config.js";
+import { configureManHelp } from "./shell.js";
 import type { Executor, ModuleDescriptor } from "./cli.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -96,6 +98,8 @@ export function createCli(
   verbose = false,
 ): Command {
   verboseHelp = verbose;
+  // Register Config Bus namespace (apcore >= 0.15.0)
+  registerConfigNamespace();
   // Resolve program name
   const resolvedProgName = progName ?? path.basename(process.argv[1] ?? "apcore-cli") ?? "apcore-cli";
 
@@ -120,8 +124,18 @@ export function createCli(
     ?? "./extensions";
   void resolvedExtDir; // Will be used when apcore-js registry is wired
 
+  // Footer hints for discoverability
+  program.addHelpText("after", [
+    "",
+    "Use --help --verbose to show all options (including built-in apcore options).",
+    "Use --help --man to display a formatted man page.",
+  ].join("\n"));
+
   // Register init command for scaffolding
   registerInitCommand(program);
+
+  // Register --help --man support
+  configureManHelp(program, resolvedProgName, VERSION);
 
   // Hook to apply optional toolkit integration before command execution.
   // Commander actions are async, so we can set up toolkit state lazily.

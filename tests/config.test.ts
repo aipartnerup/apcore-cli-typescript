@@ -196,4 +196,49 @@ describe("ConfigResolver", () => {
       expect(mockReadFileSync).toHaveBeenCalledTimes(1);
     });
   });
+
+  // ---- Task 4: Namespace-aware config resolution (apcore >= 0.15.0) ----
+
+  describe("namespace-aware config resolution", () => {
+    it("DEFAULTS contain namespace keys", () => {
+      expect(DEFAULTS).toHaveProperty("apcore-cli.stdin_buffer_limit");
+      expect(DEFAULTS).toHaveProperty("apcore-cli.auto_approve");
+      expect(DEFAULTS).toHaveProperty("apcore-cli.help_text_max_length");
+      expect(DEFAULTS).toHaveProperty("apcore-cli.logging_level");
+    });
+
+    it("resolves namespace key from legacy config file", () => {
+      mockFileContent(yaml.dump({ cli: { stdin_buffer_limit: 5242880 } }));
+      const resolver = new ConfigResolver({}, "apcore.yaml");
+      expect(resolver.resolve("apcore-cli.stdin_buffer_limit")).toBe(5242880);
+    });
+
+    it("resolves legacy key from namespace config file", () => {
+      mockFileContent(
+        yaml.dump({ "apcore-cli": { auto_approve: true } }),
+      );
+      const resolver = new ConfigResolver({}, "apcore.yaml");
+      expect(resolver.resolve("cli.auto_approve")).toBe(true);
+    });
+
+    it("direct key takes precedence over alternate", () => {
+      mockFileContent(
+        yaml.dump({
+          cli: { help_text_max_length: 500 },
+          "apcore-cli": { help_text_max_length: 2000 },
+        }),
+      );
+      const resolver = new ConfigResolver({}, "apcore.yaml");
+      expect(resolver.resolve("cli.help_text_max_length")).toBe(500);
+      expect(resolver.resolve("apcore-cli.help_text_max_length")).toBe(2000);
+    });
+
+    it("returns namespace default when no file present", () => {
+      mockFileNotFound();
+      const resolver = new ConfigResolver();
+      expect(resolver.resolve("apcore-cli.stdin_buffer_limit")).toBe(10_485_760);
+      expect(resolver.resolve("apcore-cli.auto_approve")).toBe(false);
+      expect(resolver.resolve("apcore-cli.logging_level")).toBe("WARNING");
+    });
+  });
 });
