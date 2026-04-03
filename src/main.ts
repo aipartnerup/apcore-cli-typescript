@@ -18,7 +18,7 @@ import { registerInitCommand } from "./init-cmd.js";
 import { getDisplay } from "./display-helpers.js";
 import { registerConfigNamespace } from "./config.js";
 import { configureManHelp } from "./shell.js";
-import type { Executor, ModuleDescriptor } from "./cli.js";
+import type { Executor, ModuleDescriptor, Registry } from "./cli.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -86,17 +86,43 @@ export interface OptionConfig {
 // createCli
 // ---------------------------------------------------------------------------
 
+/** Options for createCli. */
+export interface CreateCliOptions {
+  extensionsDir?: string;
+  progName?: string;
+  verbose?: boolean;
+  /** Pre-populated Registry instance. Skips filesystem discovery when provided. */
+  registry?: Registry;
+  /** Pre-built Executor instance. Used alongside registry. */
+  executor?: Executor;
+}
+
 /**
  * Build and return the top-level Commander program.
  *
- * @param extensionsDir  Path to the extensions directory (default: ./extensions)
+ * @param extensionsDirOrOpts  Path to extensions directory, or a CreateCliOptions object.
  * @param progName       Program name shown in help (default: apcore-cli)
+ * @param verbose        Show verbose help output
  */
 export function createCli(
-  extensionsDir?: string,
+  extensionsDirOrOpts?: string | CreateCliOptions,
   progName?: string,
   verbose = false,
 ): Command {
+  // Normalise overloaded first argument.
+  let extensionsDir: string | undefined;
+  let registry: Registry | undefined;
+  let executor: Executor | undefined;
+  if (typeof extensionsDirOrOpts === "object" && extensionsDirOrOpts !== null) {
+    extensionsDir = extensionsDirOrOpts.extensionsDir;
+    progName = extensionsDirOrOpts.progName ?? progName;
+    verbose = extensionsDirOrOpts.verbose ?? verbose;
+    registry = extensionsDirOrOpts.registry;
+    executor = extensionsDirOrOpts.executor;
+  } else {
+    extensionsDir = extensionsDirOrOpts;
+  }
+
   verboseHelp = verbose;
   // Register Config Bus namespace (apcore >= 0.15.0)
   registerConfigNamespace();
@@ -117,12 +143,27 @@ export function createCli(
     .option("--log-level <level>", "Logging level (DEBUG|INFO|WARNING|ERROR)", "WARNING")
     .option("--verbose", "Show all options in help output (including built-in apcore options)");
 
-  // NOTE: Full registry/executor wiring requires apcore-js to be available.
-  // For now, extensions-dir is accepted but not wired to a real registry.
-  const resolvedExtDir = extensionsDir
-    ?? process.env.APCORE_EXTENSIONS_ROOT
-    ?? "./extensions";
-  void resolvedExtDir; // Will be used when apcore-js registry is wired
+  // Validate parameter combination: executor without registry is invalid.
+  if (executor && !registry) {
+    throw new Error("executor requires registry — pass both or neither");
+  }
+
+  // Registry/executor wiring: use pre-populated instances if provided,
+  // otherwise fall back to extensions-dir discovery (requires apcore-js).
+  if (registry) {
+    // Pre-populated registry provided — skip filesystem discovery.
+    // TODO: Wire LazyModuleGroup/GroupedModuleGroup with provided registry+executor
+    // once apcore-js is available and Executor can be auto-built from registry.
+    (program as unknown as Record<string, unknown>)._registry = registry;
+    if (executor) {
+      (program as unknown as Record<string, unknown>)._executor = executor;
+    }
+  } else {
+    const resolvedExtDir = extensionsDir
+      ?? process.env.APCORE_EXTENSIONS_ROOT
+      ?? "./extensions";
+    void resolvedExtDir; // Will be used when apcore-js registry is wired
+  }
 
   // Footer hints for discoverability
   program.addHelpText("after", [

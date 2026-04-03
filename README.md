@@ -73,8 +73,25 @@ All modules are auto-discovered. CLI flags are auto-generated from each module's
 ```typescript
 import { createCli } from "apcore-cli";
 
-// Build the CLI from your registry
+// Build the CLI from an extensions directory (auto-discovers modules)
 const cli = createCli("./extensions");
+cli.parse(process.argv);
+```
+
+#### Pre-populated registry
+
+Frameworks that register modules at runtime can pass a pre-populated `Registry` directly via `CreateCliOptions`, skipping filesystem discovery entirely:
+
+```typescript
+import { createCli } from "apcore-cli";
+import type { CreateCliOptions } from "apcore-cli";
+
+// registry and executor are already populated by your framework
+const cli = createCli({
+  registry,
+  executor,
+  progName: "myapp",
+});
 cli.parse(process.argv);
 ```
 
@@ -276,6 +293,8 @@ apcore Registry + Executor (your modules, unchanged)
 ## API Overview
 
 **Classes:** `LazyModuleGroup`, `ConfigResolver`, `AuthProvider`, `ConfigEncryptor`, `AuditLogger`, `Sandbox`
+
+**Interfaces:** `CreateCliOptions`, `Registry`, `Executor`, `ModuleDescriptor`
 
 **Functions:** `createCli`, `main`, `buildModuleCommand`, `validateModuleId`, `collectInput`, `schemaToCliOptions`, `reconvertEnumValues`, `resolveRefs`, `checkApproval`, `resolveFormat`, `formatModuleList`, `formatModuleDetail`, `formatExecResult`, `registerDiscoveryCommands`, `registerShellCommands`, `setAuditLogger`, `getAuditLogger`, `setVerboseHelp`, `setDocsUrl`, `buildProgramManPage`, `configureManHelp`, `exitCodeForError`, `mapType`, `extractHelp`, `truncate`
 

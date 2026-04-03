@@ -91,6 +91,51 @@ describe("Commander exitOverride", () => {
 });
 
 // ---------------------------------------------------------------------------
+// createCli with pre-populated registry
+// ---------------------------------------------------------------------------
+
+describe("createCli() with pre-populated registry", () => {
+  it("accepts registry via CreateCliOptions", () => {
+    const registry = {
+      listModules: () => [],
+      getModule: () => null,
+    };
+    const executor = {
+      execute: async () => ({}),
+    };
+    const cli = createCli({ registry, executor, progName: "test-cli" });
+    expect(cli.name()).toBe("test-cli");
+    // Registry should be stored on program for downstream access
+    expect((cli as unknown as Record<string, unknown>)._registry).toBe(registry);
+    expect((cli as unknown as Record<string, unknown>)._executor).toBe(executor);
+  });
+
+  it("accepts registry without executor", () => {
+    const registry = {
+      listModules: () => [],
+      getModule: () => null,
+    };
+    const cli = createCli({ registry, progName: "test-cli" });
+    expect(cli.name()).toBe("test-cli");
+    expect((cli as unknown as Record<string, unknown>)._registry).toBe(registry);
+  });
+
+  it("throws if executor is provided without registry", () => {
+    const executor = {
+      execute: async () => ({}),
+    };
+    expect(() => createCli({ executor, progName: "test-cli" })).toThrow(
+      "executor requires registry",
+    );
+  });
+
+  it("preserves backward compatibility with string first arg", () => {
+    const cli = createCli(undefined, "compat-test");
+    expect(cli.name()).toBe("compat-test");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildModuleCommand
 // ---------------------------------------------------------------------------
 

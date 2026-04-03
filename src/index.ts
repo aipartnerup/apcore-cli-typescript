@@ -6,7 +6,7 @@
 
 // Core CLI
 export { createCli, main, buildModuleCommand, validateModuleId, collectInput, reconvertEnumValues, applyToolkitIntegration, verboseHelp, setVerboseHelp, docsUrl, setDocsUrl } from "./main.js";
-export type { OptionConfig } from "./main.js";
+export type { OptionConfig, CreateCliOptions } from "./main.js";
 
 // Lazy module loading
 export { LazyModuleGroup, GroupedModuleGroup, LazyGroup, BUILTIN_COMMANDS } from "./cli.js";
