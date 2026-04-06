@@ -28,6 +28,45 @@ export interface Registry {
 /** Placeholder for apcore-js Executor. */
 export interface Executor {
   execute(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
+  /** Validate inputs without executing. Returns a PreflightResult. */
+  validate?(moduleId: string, input: Record<string, unknown>): Promise<PreflightResult>;
+  /** Execute with pipeline trace. Returns [result, PipelineTrace]. */
+  callWithTrace?(moduleId: string, input: Record<string, unknown>, options?: { strategy?: string }): Promise<[unknown, PipelineTrace]>;
+  /** Stream execution — async iterator of chunks. */
+  stream?(moduleId: string, input: Record<string, unknown>): AsyncIterable<unknown>;
+  /** Call a module (synchronous-style, used by system commands). */
+  call?(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
+}
+
+/** Result of a preflight validation check. */
+export interface PreflightCheck {
+  check: string;
+  passed: boolean;
+  error?: unknown;
+  warnings?: string[];
+}
+
+/** Result of executor.validate(). */
+export interface PreflightResult {
+  valid: boolean;
+  requires_approval: boolean;
+  checks: PreflightCheck[];
+}
+
+/** A single step in a pipeline trace. */
+export interface PipelineTraceStep {
+  name: string;
+  duration_ms: number;
+  skipped: boolean;
+  skip_reason?: string;
+}
+
+/** Pipeline execution trace returned by callWithTrace(). */
+export interface PipelineTrace {
+  strategy_name: string;
+  total_duration_ms: number;
+  success: boolean;
+  steps: PipelineTraceStep[];
 }
 
 /** Placeholder for apcore-js ModuleDescriptor. */
@@ -44,7 +83,22 @@ export interface ModuleDescriptor {
 }
 
 /** Built-in command names that cannot be overridden by modules. */
-export const BUILTIN_COMMANDS = ["completion", "describe", "exec", "init", "list", "man"];
+export const BUILTIN_COMMANDS = [
+  "completion",
+  "config",
+  "describe",
+  "describe-pipeline",
+  "disable",
+  "enable",
+  "exec",
+  "health",
+  "init",
+  "list",
+  "man",
+  "reload",
+  "usage",
+  "validate",
+];
 
 // ---------------------------------------------------------------------------
 // LazyModuleGroup
@@ -222,8 +276,13 @@ export class GroupedModuleGroup extends LazyModuleGroup {
 
   /**
    * Determine (groupName | null, commandName) for a module from its display overlay.
+   *
+   * @param groupDepth  Number of dotted segments to consume as the group prefix.
+   *                    Defaults to 1 (e.g., "math.add" → group="math", cmd="add").
+   *                    Set to 2 for multi-level grouping (e.g., "math.trig.sin" →
+   *                    group="math.trig", cmd="sin").
    */
-  static resolveGroup(moduleId: string, descriptor: ModuleDescriptor): [string | null, string] {
+  static resolveGroup(moduleId: string, descriptor: ModuleDescriptor, groupDepth = 1): [string | null, string] {
     if (!moduleId) {
       warn("Empty module_id encountered in resolveGroup");
       return [null, ""];
@@ -244,12 +303,13 @@ export class GroupedModuleGroup extends LazyModuleGroup {
       return [null, (cliDisplay.alias as string | undefined) ?? moduleId];
     }
 
-    // Auto-extraction from alias or module_id
+    // Auto-extraction from alias or module_id with configurable depth
     const cliName = (cliDisplay.alias as string | undefined) ?? moduleId;
     if (cliName.includes(".")) {
-      const dotIdx = cliName.indexOf(".");
-      const group = cliName.substring(0, dotIdx);
-      const cmd = cliName.substring(dotIdx + 1);
+      const parts = cliName.split(".");
+      const depth = Math.max(1, Math.min(groupDepth, parts.length - 1));
+      const group = parts.slice(0, depth).join(".");
+      const cmd = parts.slice(depth).join(".");
       return [group, cmd];
     }
     return [null, cliName];

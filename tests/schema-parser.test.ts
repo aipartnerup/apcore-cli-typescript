@@ -142,12 +142,12 @@ describe("schemaToCliOptions()", () => {
     expect(opts[0].description).toContain("[required]");
   });
 
-  it("does NOT set required=true at option level", () => {
+  it("sets required=true at option level for required properties", () => {
     const opts = schemaToCliOptions({
       properties: { name: { type: "string" } },
       required: ["name"],
     });
-    expect(opts[0].required).toBe(false);
+    expect(opts[0].required).toBe(true);
   });
 
   it("uses property default value", () => {

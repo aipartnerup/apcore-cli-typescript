@@ -123,7 +123,7 @@ export function schemaToCliOptions(
         flags: `--${flagBase}, --no-${flagBase}`,
         description: helpText,
         defaultValue: defaultVal,
-        required: false,
+        required: isRequired,
         isBooleanFlag: true,
       });
     } else if ("enum" in propSchema && Array.isArray(propSchema.enum)) {
@@ -135,7 +135,7 @@ export function schemaToCliOptions(
           flags: `${flagName} <value>`,
           description: helpText,
           defaultValue,
-          required: false,
+          required: isRequired,
         });
       } else {
         const stringValues = enumValues.map(String);
@@ -155,7 +155,7 @@ export function schemaToCliOptions(
           description: helpText,
           defaultValue:
             defaultValue !== undefined ? String(defaultValue) : undefined,
-          required: false,
+          required: isRequired,
           choices: stringValues,
           enumOriginalTypes:
             Object.keys(enumOriginalTypes).length > 0
@@ -184,7 +184,7 @@ export function schemaToCliOptions(
         flags: `${flagName} <value>`,
         description: helpText,
         defaultValue,
-        required: false,
+        required: isRequired,
         parseArg,
       });
     }

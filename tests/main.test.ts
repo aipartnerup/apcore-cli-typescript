@@ -150,13 +150,20 @@ describe("buildModuleCommand()", () => {
     expect(cmd.description()).toBe("Add numbers");
   });
 
-  it("includes built-in options (--input, --yes, --format, --sandbox, --large-input)", () => {
+  it("includes built-in options (--input, --yes, --format, --sandbox, --large-input, --dry-run, --trace, --stream, --strategy, --fields, --approval-timeout, --approval-token)", () => {
     const cmd = buildModuleCommand(makeMod("test.mod"), makeExecutor());
     const longFlags = cmd.options.map((o) => o.long);
     expect(longFlags).toContain("--input");
     expect(longFlags).toContain("--format");
     expect(longFlags).toContain("--sandbox");
     expect(longFlags).toContain("--large-input");
+    expect(longFlags).toContain("--dry-run");
+    expect(longFlags).toContain("--trace");
+    expect(longFlags).toContain("--stream");
+    expect(longFlags).toContain("--strategy");
+    expect(longFlags).toContain("--fields");
+    expect(longFlags).toContain("--approval-timeout");
+    expect(longFlags).toContain("--approval-token");
   });
 
   it("generates schema-derived options from inputSchema.properties", () => {
@@ -182,6 +189,13 @@ describe("buildModuleCommand()", () => {
     expect(hiddenLongs).toContain("--sandbox");
     expect(hiddenLongs).toContain("--large-input");
     expect(hiddenLongs).toContain("--yes");
+    expect(hiddenLongs).toContain("--dry-run");
+    expect(hiddenLongs).toContain("--trace");
+    expect(hiddenLongs).toContain("--stream");
+    expect(hiddenLongs).toContain("--strategy");
+    expect(hiddenLongs).toContain("--fields");
+    expect(hiddenLongs).toContain("--approval-timeout");
+    expect(hiddenLongs).toContain("--approval-token");
   });
 
   it("shows built-in options in help when verboseHelp is true", () => {

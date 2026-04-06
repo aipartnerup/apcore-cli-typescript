@@ -26,7 +26,64 @@ function getAnnotation(
 }
 
 // ---------------------------------------------------------------------------
-// checkApproval
+// CliApprovalHandler — implements apcore ApprovalHandler protocol (FE-11 §3.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * CLI ApprovalHandler that prompts in TTY, auto-denies in non-TTY.
+ *
+ * Implements the apcore ApprovalHandler protocol:
+ * - `requestApproval(request) -> ApprovalResult`
+ * - `checkApproval(approvalId) -> ApprovalResult`
+ *
+ * Pass to Executor via `executor.setApprovalHandler(handler)`.
+ */
+export class CliApprovalHandler {
+  autoApprove: boolean;
+  timeout: number;
+
+  constructor(autoApprove = false, timeout = 60) {
+    this.autoApprove = autoApprove;
+    this.timeout = Math.max(1, Math.min(timeout, 3600));
+  }
+
+  async requestApproval(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const moduleId = (request.module_id as string) ?? "unknown";
+
+    if (this.autoApprove) {
+      return { status: "approved", approved_by: "auto_approve" };
+    }
+
+    const envVal = process.env.APCORE_CLI_AUTO_APPROVE ?? "";
+    if (envVal === "1") {
+      return { status: "approved", approved_by: "env_auto_approve" };
+    }
+
+    if (!process.stdin.isTTY) {
+      return { status: "rejected", reason: "Non-interactive session without --yes" };
+    }
+
+    // TTY prompt
+    const annotations = request.annotations as Record<string, unknown> | undefined;
+    const extra = (annotations?.extra as Record<string, unknown>) ?? {};
+    const message = (extra.approval_message as string) ?? `Module '${moduleId}' requires approval to execute.`;
+
+    process.stderr.write(message + "\n");
+    try {
+      await promptWithTimeout({ id: moduleId } as ModuleDescriptor, this.timeout);
+      return { status: "approved", approved_by: "tty_user" };
+    } catch {
+      return { status: "rejected", reason: "User rejected or timed out" };
+    }
+  }
+
+  async checkApproval(_approvalId: string): Promise<Record<string, unknown>> {
+    return { status: "rejected", reason: "CLI does not support async approval polling" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// checkApproval (legacy function wrapper)
 // ---------------------------------------------------------------------------
 
 /**
@@ -37,6 +94,7 @@ function getAnnotation(
 export async function checkApproval(
   moduleDef: ModuleDescriptor,
   autoApprove: boolean,
+  timeout: number = 60,
 ): Promise<void> {
   const annotations = moduleDef.annotations;
 
@@ -83,7 +141,7 @@ export async function checkApproval(
   }
 
   // TTY prompt
-  await promptWithTimeout(moduleDef, 60);
+  await promptWithTimeout(moduleDef, timeout);
 }
 
 /**

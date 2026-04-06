@@ -24,6 +24,13 @@ export const DEFAULTS: Record<string, unknown> = {
   "apcore-cli.auto_approve": false,
   "apcore-cli.help_text_max_length": 1000,
   "apcore-cli.logging_level": "WARNING",
+  // FE-11 config keys
+  "cli.approval_timeout": 60,
+  "cli.strategy": "standard",
+  "cli.group_depth": 1,
+  "apcore-cli.approval_timeout": 60,
+  "apcore-cli.strategy": "standard",
+  "apcore-cli.group_depth": 1,
 };
 
 /** Namespace key ↔ legacy key mapping for backward compatibility. */
@@ -55,6 +62,9 @@ export function registerConfigNamespace(): void {
           auto_approve: false,
           help_text_max_length: 1000,
           logging_level: "WARNING",
+          approval_timeout: 60,
+          strategy: "standard",
+          group_depth: 1,
         },
       });
     }

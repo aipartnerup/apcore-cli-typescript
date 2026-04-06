@@ -1,6 +1,6 @@
 {
   "name": "apcore-cli",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "CLI wrapper for the apcore core SDK — exposes apcore modules as CLI commands",
   "type": "module",
   "main": "./dist/index.js",
@@ -27,7 +27,7 @@
     "node": ">=18.0.0"
   },
   "peerDependencies": {
-    "apcore-js": ">=0.15.1",
+    "apcore-js": ">=0.17.1",
     "apcore-toolkit": ">=0.4.0"
   },
   "peerDependenciesMeta": {
@@ -41,7 +41,7 @@
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
-    "apdev-js": "^0.2.2",
+    "apdev-js": "^0.2.4",
     "typescript": "^5.4.0",
     "tsup": "^8.0.0",
     "vitest": "^2.0.0",

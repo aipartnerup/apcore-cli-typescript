@@ -5,12 +5,15 @@
  */
 
 // Core CLI
-export { createCli, main, buildModuleCommand, validateModuleId, collectInput, reconvertEnumValues, applyToolkitIntegration, verboseHelp, setVerboseHelp, docsUrl, setDocsUrl } from "./main.js";
+export { createCli, main, buildModuleCommand, validateModuleId, collectInput, reconvertEnumValues, applyToolkitIntegration, verboseHelp, setVerboseHelp, docsUrl, setDocsUrl, emitErrorJson, emitErrorTty } from "./main.js";
 export type { OptionConfig, CreateCliOptions } from "./main.js";
 
 // Lazy module loading
 export { LazyModuleGroup, GroupedModuleGroup, LazyGroup, BUILTIN_COMMANDS } from "./cli.js";
-export type { Registry, Executor, ModuleDescriptor } from "./cli.js";
+export type { Registry, Executor, ModuleDescriptor, PreflightResult, PreflightCheck, PipelineTrace, PipelineTraceStep } from "./cli.js";
+
+// Approval
+export { CliApprovalHandler } from "./approval.js";
 
 // Display helpers
 export { getDisplay, getCliDisplayFields } from "./display-helpers.js";
@@ -22,10 +25,10 @@ export { registerInitCommand } from "./init-cmd.js";
 export { ConfigResolver, DEFAULTS, registerConfigNamespace } from "./config.js";
 
 // Discovery
-export { registerDiscoveryCommands } from "./discovery.js";
+export { registerDiscoveryCommands, registerValidateCommand } from "./discovery.js";
 
 // Output formatting
-export { formatExecResult, resolveFormat, truncate, formatModuleList, formatModuleDetail } from "./output.js";
+export { formatExecResult, resolveFormat, truncate, formatModuleList, formatModuleDetail, formatPreflightResult, firstFailedExitCode } from "./output.js";
 
 // Schema handling
 export { resolveRefs } from "./ref-resolver.js";
@@ -36,6 +39,12 @@ export { checkApproval } from "./approval.js";
 
 // Shell integration
 export { registerShellCommands, buildProgramManPage, configureManHelp } from "./shell.js";
+
+// System commands (F2)
+export { registerSystemCommands } from "./system-cmd.js";
+
+// Strategy / pipeline commands (F8)
+export { registerPipelineCommand } from "./strategy.js";
 
 // Errors
 export {

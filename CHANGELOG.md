@@ -5,6 +5,36 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-04-06
+
+### Changed
+
+- **Dependency bump**: requires `apcore-js >= 0.17.1` (was `>= 0.15.1`). Adds Execution Pipeline Strategy, Config Bus enhancements, Pipeline v2 declarative step metadata, `minimal` strategy preset.
+- **Schema parser**: Required schema properties now correctly enforced at Commander option level (was silently optional).
+- `checkApproval()` now accepts `timeout` parameter instead of hardcoded 60s.
+
+### Added
+
+- **FE-11: Usability Enhancements** — 11 new capabilities:
+  - `--dry-run` preflight mode. Standalone `validate` command via `registerValidateCommand()`.
+  - System management commands: `health`, `usage`, `enable`, `disable`, `reload`, `config get`/`config set` in `system-cmd.ts`. Graceful no-op when system modules unavailable.
+  - Enhanced error output: `emitErrorJson()` / `emitErrorTty()` with structured guidance fields.
+  - `--trace` pipeline visualization.
+  - `CliApprovalHandler` class implementing apcore `ApprovalHandler` protocol. `--approval-timeout`, `--approval-token` flags.
+  - `--stream` JSONL output.
+  - Enhanced `list` command: `--search`, `--status`, `--annotation`, `--sort`, `--reverse`, `--deprecated`, `--deps`, `--flat`.
+  - `--strategy` selection: `standard`, `internal`, `testing`, `performance`, `minimal`. `describe-pipeline` command in `strategy.ts`.
+  - Output format extensions: `--format csv|yaml|jsonl`, `--fields` dot-path field selection.
+  - Multi-level grouping: `groupDepth` parameter in `resolveGroup()`.
+  - Custom command extension: `CreateCliOptions.extraCommands` with collision detection.
+- `Executor` interface extended with optional `validate()`, `callWithTrace()`, `stream()`, `call()` methods.
+- `PreflightResult`, `PreflightCheck`, `PipelineTrace`, `PipelineTraceStep` types exported.
+- New error code: `CONFIG_ENV_MAP_CONFLICT` in `EXIT_CODES`.
+- Config defaults: `cli.approval_timeout` (60), `cli.strategy` ("standard"), `cli.group_depth` (1).
+- New files: `system-cmd.ts`, `strategy.ts`.
+
+---
+
 ## [0.5.1] - 2026-04-03
 
 ### Added
