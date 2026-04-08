@@ -65,12 +65,16 @@ describe("validateModuleId()", () => {
     expect(() => validateModuleId("health")).not.toThrow();
   });
 
-  it("exits 2 for IDs exceeding 128 characters", () => {
+  it("accepts IDs at exactly 192 characters (PROTOCOL_SPEC §2.7)", () => {
+    expect(() => validateModuleId("a".repeat(192))).not.toThrow();
+  });
+
+  it("exits 2 for IDs exceeding 192 characters", () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("exit");
     });
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    expect(() => validateModuleId("a".repeat(129))).toThrow("exit");
+    expect(() => validateModuleId("a".repeat(193))).toThrow("exit");
     expect(exitSpy).toHaveBeenCalledWith(2);
   });
 

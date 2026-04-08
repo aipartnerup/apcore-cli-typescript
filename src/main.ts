@@ -750,12 +750,16 @@ export function buildModuleCommand(
 
 /**
  * Validate that a module ID conforms to the expected format.
- * Pattern: [a-z][a-z0-9_]*(.[a-z][a-z0-9_])* — max 128 chars.
+ * Pattern: [a-z][a-z0-9_]*(.[a-z][a-z0-9_])* — max 192 chars.
+ *
+ * Length limit tracks PROTOCOL_SPEC §2.7 EBNF constraint #1 — bumped from
+ * 128 to 192 in spec 1.6.0-draft to accommodate Java/.NET deep-namespace
+ * FQN-derived IDs. Filesystem-safe (192 + ".binding.yaml".length = 205 < 255).
  */
 export function validateModuleId(moduleId: string): void {
-  if (moduleId.length > 128) {
+  if (moduleId.length > 192) {
     process.stderr.write(
-      `Error: Invalid module ID format: '${moduleId}'. Maximum length is 128 characters.\n`,
+      `Error: Invalid module ID format: '${moduleId}'. Maximum length is 192 characters.\n`,
     );
     process.exit(EXIT_CODES.INVALID_CLI_INPUT);
   }
