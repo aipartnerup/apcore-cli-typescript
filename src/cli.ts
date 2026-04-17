@@ -10,6 +10,7 @@
 import { Command } from "commander";
 import { buildModuleCommand } from "./main.js";
 import { getDisplay } from "./display-helpers.js";
+import { ExposureFilter } from "./exposure.js";
 import { warn } from "./logger.js";
 
 // TODO: Import Registry and Executor from apcore-js once available
@@ -293,6 +294,13 @@ export class GroupedModuleGroup extends LazyModuleGroup {
   /** Cached LazyGroup instances */
   private groupCache: Map<string, LazyGroup> = new Map();
   private groupMapBuilt = false;
+  /** Exposure filter (FE-12) — controls which modules appear as CLI commands */
+  exposureFilter: ExposureFilter;
+
+  constructor(registry: Registry, executor: Executor, helpTextMaxLength = 1000, exposureFilter?: ExposureFilter) {
+    super(registry, executor, helpTextMaxLength);
+    this.exposureFilter = exposureFilter ?? new ExposureFilter();
+  }
 
   /**
    * Determine (groupName | null, commandName) for a module from its display overlay.
@@ -348,6 +356,9 @@ export class GroupedModuleGroup extends LazyModuleGroup {
         const moduleId = descriptor.id;
         const cached = this.descriptorCache.get(moduleId);
         if (!cached) {
+          continue;
+        }
+        if (!this.exposureFilter.isExposed(moduleId)) {
           continue;
         }
         const [group, cmd] = GroupedModuleGroup.resolveGroup(moduleId, cached);

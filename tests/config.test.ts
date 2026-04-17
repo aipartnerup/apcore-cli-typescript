@@ -42,13 +42,17 @@ describe("ConfigResolver", () => {
 
   describe("defaults", () => {
     it("returns default value when no other source provides one", () => {
+      // Audit D9 (v0.6.x): only keys actually consumed by resolve() at
+      // runtime survive in DEFAULTS. The deleted keys are tested for
+      // absence by `DEFAULTS does not contain dead keys` below.
       mockFileNotFound();
       const resolver = new ConfigResolver();
       expect(resolver.resolve("extensions.root")).toBe("./extensions");
       expect(resolver.resolve("logging.level")).toBe("WARNING");
-      expect(resolver.resolve("sandbox.enabled")).toBe(false);
-      expect(resolver.resolve("cli.stdin_buffer_limit")).toBe(10_485_760);
-      expect(resolver.resolve("cli.auto_approve")).toBe(false);
+      expect(resolver.resolve("cli.help_text_max_length")).toBe(1000);
+      expect(resolver.resolve("cli.approval_timeout")).toBe(60);
+      expect(resolver.resolve("cli.strategy")).toBe("standard");
+      expect(resolver.resolve("cli.group_depth")).toBe(1);
     });
 
     it("returns undefined for unknown keys with no default", () => {
@@ -60,10 +64,25 @@ describe("ConfigResolver", () => {
     it("DEFAULTS has expected keys", () => {
       expect(DEFAULTS).toHaveProperty("extensions.root");
       expect(DEFAULTS).toHaveProperty("logging.level");
-      expect(DEFAULTS).toHaveProperty("sandbox.enabled");
-      expect(DEFAULTS).toHaveProperty("cli.stdin_buffer_limit");
-      expect(DEFAULTS).toHaveProperty("cli.auto_approve");
       expect(DEFAULTS).toHaveProperty("cli.help_text_max_length");
+      expect(DEFAULTS).toHaveProperty("cli.approval_timeout");
+      expect(DEFAULTS).toHaveProperty("cli.strategy");
+      expect(DEFAULTS).toHaveProperty("cli.group_depth");
+    });
+
+    it("DEFAULTS does not contain dead keys (audit D9 cleanup)", () => {
+      // sandbox.enabled, cli.auto_approve, cli.stdin_buffer_limit, and the
+      // apcore-cli.* aliases were never read by resolve() at runtime —
+      // sandbox/auto-approve come from CLI flags, the stdin buffer is
+      // hard-coded, and namespace aliases are registered separately by
+      // registerConfigNamespace() at createCli startup.
+      expect(DEFAULTS).not.toHaveProperty("sandbox.enabled");
+      expect(DEFAULTS).not.toHaveProperty("cli.auto_approve");
+      expect(DEFAULTS).not.toHaveProperty("cli.stdin_buffer_limit");
+      expect(DEFAULTS).not.toHaveProperty("apcore-cli.stdin_buffer_limit");
+      expect(DEFAULTS).not.toHaveProperty("apcore-cli.auto_approve");
+      expect(DEFAULTS).not.toHaveProperty("apcore-cli.help_text_max_length");
+      expect(DEFAULTS).not.toHaveProperty("apcore-cli.logging_level");
     });
   });
 
@@ -140,12 +159,13 @@ describe("ConfigResolver", () => {
       mockFileContent(
         yaml.dump({
           logging: { level: "DEBUG" },
-          sandbox: { enabled: true },
+          cli: { strategy: "performance" },
         }),
       );
       const resolver = new ConfigResolver({}, "apcore.yaml");
       expect(resolver.resolve("logging.level")).toBe("DEBUG");
-      expect(resolver.resolve("sandbox.enabled")).toBe(true);
+      // cli.strategy is a real DEFAULTS key (FE-11) — file overrides default.
+      expect(resolver.resolve("cli.strategy")).toBe("performance");
     });
 
     it("returns null for missing config file (no error)", () => {
@@ -200,12 +220,10 @@ describe("ConfigResolver", () => {
   // ---- Task 4: Namespace-aware config resolution (apcore >= 0.15.0) ----
 
   describe("namespace-aware config resolution", () => {
-    it("DEFAULTS contain namespace keys", () => {
-      expect(DEFAULTS).toHaveProperty("apcore-cli.stdin_buffer_limit");
-      expect(DEFAULTS).toHaveProperty("apcore-cli.auto_approve");
-      expect(DEFAULTS).toHaveProperty("apcore-cli.help_text_max_length");
-      expect(DEFAULTS).toHaveProperty("apcore-cli.logging_level");
-    });
+    // Audit D9 (v0.6.x): the apcore-cli.* alias entries were removed from
+    // DEFAULTS — but the cross-key file-lookup mechanism (NAMESPACE_TO_LEGACY
+    // / LEGACY_TO_NAMESPACE) still works independently. The tests below
+    // exercise that file-fallback path without depending on DEFAULTS.
 
     it("resolves namespace key from legacy config file", () => {
       mockFileContent(yaml.dump({ cli: { stdin_buffer_limit: 5242880 } }));
@@ -233,12 +251,16 @@ describe("ConfigResolver", () => {
       expect(resolver.resolve("apcore-cli.help_text_max_length")).toBe(2000);
     });
 
-    it("returns namespace default when no file present", () => {
+    it("returns undefined for namespace keys when no file present (audit D9)", () => {
+      // Post-cleanup: namespace alias keys are NOT in DEFAULTS, so a query
+      // with no file falls through to undefined. The Config Bus registration
+      // in registerConfigNamespace() handles namespace defaults at the
+      // apcore-js layer instead of in this resolver.
       mockFileNotFound();
       const resolver = new ConfigResolver();
-      expect(resolver.resolve("apcore-cli.stdin_buffer_limit")).toBe(10_485_760);
-      expect(resolver.resolve("apcore-cli.auto_approve")).toBe(false);
-      expect(resolver.resolve("apcore-cli.logging_level")).toBe("WARNING");
+      expect(resolver.resolve("apcore-cli.stdin_buffer_limit")).toBeUndefined();
+      expect(resolver.resolve("apcore-cli.auto_approve")).toBeUndefined();
+      expect(resolver.resolve("apcore-cli.logging_level")).toBeUndefined();
     });
   });
 });

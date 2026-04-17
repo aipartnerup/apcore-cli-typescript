@@ -110,6 +110,18 @@
       "depends_on": [],
       "tasks_total": 4,
       "tasks_completed": 4
+    },
+    {
+      "id": "FE-12",
+      "name": "Exposure Filtering",
+      "plan_file": null,
+      "status": "completed",
+      "priority": "P1",
+      "source_files": ["src/exposure.ts", "src/cli.ts", "src/main.ts", "src/config.ts", "src/discovery.ts", "src/output.ts", "src/index.ts"],
+      "test_files": ["tests/exposure.test.ts"],
+      "depends_on": ["FE-01", "FE-04", "FE-07"],
+      "tasks_total": 8,
+      "tasks_completed": 8
     }
   ]
 }

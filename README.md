@@ -8,7 +8,7 @@ Terminal adapter for apcore. Execute AI-Perceivable modules from the command lin
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-18%2B-blue.svg)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-183%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-275%2B%20passed-brightgreen.svg)]()
 
 | | |
 |---|---|
@@ -49,7 +49,14 @@ Terminal adapter for apcore. Execute AI-Perceivable modules from the command lin
 pnpm add apcore-cli apcore-js
 ```
 
-Requires Node.js 18+ and `apcore-js >= 0.14.0`.
+Requires Node.js 18+ and `apcore-js >= 0.17.1`.
+
+**Optional:** install `apcore-toolkit` (>=0.4.0) to enable display overlay and registry writer integration via `applyToolkitIntegration`, `DisplayResolver`, and `RegistryWriter`.
+
+```bash
+pnpm add apcore-cli apcore-js
+pnpm add -D apcore-toolkit  # optional, for display overlay / registry writer
+```
 
 ## Quick Start
 
@@ -95,20 +102,31 @@ const cli = createCli({
 cli.parse(process.argv);
 ```
 
-Or use the `LazyModuleGroup` directly with Commander:
+Or wire the `createCli` options-object form directly with a runtime-supplied registry/executor:
 
 ```typescript
-import { LazyModuleGroup, buildModuleCommand } from "apcore-cli";
-import { Registry, Executor } from "apcore-js";
+import { createCli } from "apcore-cli";
 
-const registry = new Registry("./extensions");
-registry.discover();
-const executor = new Executor(registry);
+async function main() {
+  // Obtain registry/executor from your apcore-js setup
+  // (e.g., via ExtensionsLoader or your framework's module discovery).
+  // See apcore-js docs for the exact bootstrap API.
+  const { registry, executor } = await bootstrapApcoreRuntime("./extensions");
 
-const group = new LazyModuleGroup(registry, executor);
-const cmd = group.getCommand("math.add");
-cmd?.parse(process.argv);
+  const cli = createCli({
+    registry,
+    executor,
+    progName: "myapp",
+    // expose: { mode: "include", include: ["admin.*"] },
+    // extraCommands: [customCmd1, customCmd2],
+  });
+  cli.parse(process.argv);
+}
+
+main();
 ```
+
+> **Known gap:** The `Registry`, `Executor`, and `ModuleDescriptor` types re-exported by `apcore-cli` are currently **local placeholder interfaces** pending upstream export from `apcore-js`. Direct construction (`new Registry(...)` / `new Executor(registry)`) is **not supported** at this version. Structural typing allows runtime apcore-js objects to satisfy these interfaces, so `createCli({ registry, executor })` works when you pass in objects produced by your apcore-js runtime.
 
 ## Integration with Existing Projects
 
@@ -170,13 +188,41 @@ apcore-cli [OPTIONS] COMMAND [ARGS]
 
 ### Built-in Commands
 
+The canonical 14 built-in commands (see `BUILTIN_COMMANDS` in `src/cli.ts`):
+
+**Module invocation & discovery**
+
 | Command | Description |
 |---------|-------------|
-| `list` | List available modules with optional tag filtering |
-| `describe <module_id>` | Show full module metadata and schemas |
-| `exec <module_id>` | Internal routing alias for module execution |
-| `completion <shell>` | Generate shell completion script (bash/zsh/fish) |
-| `man <command>` | Generate man page in roff format |
+| `list` | List available modules with search, status, tag/annotation filters, sort, and dependency inspection (see `src/commands/list-cmd.ts`) |
+| `describe <module_id>` | Show full module metadata, schemas, and annotations (see `src/commands/describe-cmd.ts`) |
+| `describe-pipeline <module_id>` | Inspect the execution pipeline for a module (strategies, hooks, middleware; see `src/commands/describe-pipeline-cmd.ts`) |
+| `exec <module_id>` | Internal routing alias for module execution (see `src/commands/exec-cmd.ts`) |
+| `usage <module_id>` | Show usage examples and flag hints for a module (see `src/commands/usage-cmd.ts`) |
+
+**System management**
+
+| Command | Description |
+|---------|-------------|
+| `config` | Inspect effective configuration and precedence (see `src/commands/system-cmd.ts`) |
+| `health` | Run health checks on registry, executor, config, and auth (see `src/commands/system-cmd.ts`) |
+| `reload` | Reload registry / rediscover extensions (see `src/commands/system-cmd.ts`) |
+| `enable <module_id>` | Enable a disabled module (see `src/commands/system-cmd.ts`) |
+| `disable <module_id>` | Disable a module without removing it (see `src/commands/system-cmd.ts`) |
+
+**Workflow**
+
+| Command | Description |
+|---------|-------------|
+| `init` | Scaffold a starter `apcore.yaml` / extensions layout (see `src/commands/init-cmd.ts`) |
+| `validate` | Validate modules and configuration against JSON Schema (see `src/commands/validate-cmd.ts`) |
+
+**Shell integration**
+
+| Command | Description |
+|---------|-------------|
+| `completion <shell>` | Generate shell completion script for bash / zsh / fish (see `src/commands/completion-cmd.ts`) |
+| `man [command]` | Generate a man page in roff format for a single command or the whole program (see `src/man.ts`) |
 
 ### Module Execution Options
 
@@ -187,10 +233,31 @@ When executing a module (e.g. `apcore-cli math.add`), these built-in options are
 | `--input -` | Read JSON input from STDIN |
 | `--yes` / `-y` | Bypass approval prompts |
 | `--large-input` | Allow STDIN input larger than 10MB |
-| `--format` | Output format: `json` or `table` |
+| `--format <fmt>` | Output format: `json`, `table`, `csv`, `yaml`, or `jsonl` |
 | `--sandbox` | Run module in subprocess sandbox (not yet implemented — always hidden) |
+| `--dry-run` | Run preflight checks (schema, ACL, approval) without executing (FE-11) |
+| `--trace` | Emit execution pipeline trace (strategy, hooks, middleware timings) |
+| `--stream` | Stream results line-by-line for stream-capable modules |
+| `--strategy <name>` | Override execution strategy: `standard`, `internal`, `testing`, `performance`, or `minimal` |
+| `--fields <csv>` | Select output fields via dot-path notation (e.g. `result.sum,meta.duration`) |
+| `--approval-timeout <seconds>` | Override approval timeout (default `60`) |
+| `--approval-token <token>` | Provide a pre-obtained approval token (bypasses interactive prompt) |
 
 Schema-generated flags (e.g. `--a`, `--b`) are added automatically from the module's `input_schema`.
+
+#### `list` command flags (v0.6.0)
+
+The `list` command supports enhanced filtering and inspection flags:
+
+| Option | Description |
+|--------|-------------|
+| `--search <query>` | Fuzzy search across module IDs, descriptions, and annotations |
+| `--status <state>` | Filter by status (e.g. `enabled`, `disabled`, `deprecated`) |
+| `--annotation <key=value>` | Filter by an annotation key/value pair |
+| `--sort <field>` | Sort by `name`, `status`, or other indexed fields |
+| `--reverse` | Reverse sort order |
+| `--deprecated` | Include deprecated modules in the output |
+| `--deps` | Show dependency graph for each module |
 
 ### Exit Codes
 
@@ -227,6 +294,9 @@ apcore-cli uses a 4-tier configuration precedence:
 | `APCORE_AUTH_API_KEY` | API key for remote registry authentication | *(unset)* |
 | `APCORE_CLI_SANDBOX` | Set to `1` to enable subprocess sandboxing | *(unset)* |
 | `APCORE_CLI_HELP_TEXT_MAX_LENGTH` | Maximum characters for CLI option help text before truncation | `1000` |
+| `APCORE_CLI_APPROVAL_TIMEOUT` | Default approval prompt timeout in seconds | `60` |
+| `APCORE_CLI_STRATEGY` | Default execution strategy (`standard`, `internal`, `testing`, `performance`, `minimal`) | `standard` |
+| `APCORE_CLI_GROUP_DEPTH` | Maximum nesting depth when rendering grouped module command trees | `2` |
 
 ### Config File (`apcore.yaml`)
 
@@ -239,6 +309,9 @@ sandbox:
   enabled: false
 cli:
   help_text_max_length: 1000
+  approval_timeout: 60      # seconds
+  strategy: standard        # standard | internal | testing | performance | minimal
+  group_depth: 2            # grouped-module command-tree nesting depth
 ```
 
 ## Features
@@ -251,7 +324,7 @@ cli:
 - **TTY-adaptive output** -- rich tables for terminals, JSON for pipes (configurable via `--format`)
 - **Approval gate** -- TTY-aware HITL prompts for modules with `requires_approval: true`, with `--yes` bypass and 60s timeout
 - **Schema validation** -- inputs validated against JSON Schema before execution, with `$ref`/`allOf`/`anyOf`/`oneOf` resolution
-- **Security** -- API key auth (keyring + AES-256-GCM), append-only audit logging, subprocess sandboxing
+- **Security** -- API key auth (keyring + AES-256-GCM), append-only audit logging, subprocess sandboxing (stub — not yet runnable)
 - **Shell completions** -- `apcore-cli completion bash|zsh|fish` generates completion scripts with dynamic module ID completion
 - **Man pages** -- `apcore-cli man <command>` for single commands, or `--help --man` for a complete program man page. `configureManHelp()` provides one-line integration for downstream projects
 - **Documentation URL** -- `setDocsUrl()` adds doc links to help footers and man pages
@@ -284,7 +357,7 @@ apcore-cli (the adapter)
     +-- approval             TTY-aware HITL approval
     +-- output               TTY-adaptive JSON/table output
     +-- AuditLogger          JSON Lines execution logging
-    +-- Sandbox              Subprocess isolation
+    +-- Sandbox              Subprocess isolation (stub — not yet runnable)
     |
     v
 apcore Registry + Executor (your modules, unchanged)
@@ -306,7 +379,7 @@ apcore Registry + Executor (your modules, unchanged)
 git clone https://github.com/aiperceivable/apcore-cli-typescript.git
 cd apcore-cli-typescript
 pnpm install
-pnpm test                        # 183 tests
+pnpm test                        # 275 tests across 17 suites
 pnpm build                       # compile TypeScript
 ```
 

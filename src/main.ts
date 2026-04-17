@@ -25,6 +25,8 @@ import { registerValidateCommand } from "./discovery.js";
 import { registerSystemCommands } from "./system-cmd.js";
 import { registerPipelineCommand } from "./strategy.js";
 import { BUILTIN_COMMANDS } from "./cli.js";
+import { ExposureFilter } from "./exposure.js";
+import { AuditLogger, setAuditLogger } from "./security/audit.js";
 import type { Executor, ModuleDescriptor, Registry } from "./cli.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -204,6 +206,12 @@ export interface CreateCliOptions {
   executor?: Executor;
   /** Extra commands to register after built-in commands (FE-11 F11). */
   extraCommands?: Command[];
+  /** Exposure filter config or instance (FE-12). */
+  expose?: Record<string, unknown> | import("./exposure.js").ExposureFilter;
+  /** Path to convention-based commands directory (apcore-toolkit ConventionScanner). */
+  commandsDir?: string;
+  /** Path to binding.yaml for display overlay (apcore-toolkit DisplayResolver). */
+  bindingPath?: string;
 }
 
 /**
@@ -224,6 +232,7 @@ export function createCli(
   let executor: Executor | undefined;
   let extraCommands: Command[] | undefined;
   let app: APCore | undefined;
+  let expose: Record<string, unknown> | import("./exposure.js").ExposureFilter | undefined;
   if (typeof extensionsDirOrOpts === "object" && extensionsDirOrOpts !== null) {
     extensionsDir = extensionsDirOrOpts.extensionsDir;
     progName = extensionsDirOrOpts.progName ?? progName;
@@ -232,6 +241,7 @@ export function createCli(
     registry = extensionsDirOrOpts.registry;
     executor = extensionsDirOrOpts.executor;
     extraCommands = extensionsDirOrOpts.extraCommands;
+    expose = extensionsDirOrOpts.expose;
   } else {
     extensionsDir = extensionsDirOrOpts;
   }
@@ -239,6 +249,16 @@ export function createCli(
   verboseHelp = verbose;
   // Register Config Bus namespace (apcore >= 0.15.0)
   registerConfigNamespace();
+
+  // Initialize audit logger (parity with apcore-cli-python __main__.py).
+  // Silently disabled if initialization fails (e.g., unwritable audit path).
+  try {
+    const auditLogger = new AuditLogger();
+    setAuditLogger(auditLogger);
+  } catch {
+    // audit logging unavailable — non-fatal
+  }
+
   // Resolve program name
   const resolvedProgName = progName ?? path.basename(process.argv[1] ?? "apcore-cli") ?? "apcore-cli";
 
@@ -295,6 +315,17 @@ export function createCli(
       ?? "./extensions";
     void resolvedExtDir; // Will be used when apcore-js registry is wired
   }
+
+  // Build exposure filter (FE-12)
+  let exposureFilter: ExposureFilter;
+  if (expose instanceof ExposureFilter) {
+    exposureFilter = expose;
+  } else if (typeof expose === "object" && expose !== null) {
+    exposureFilter = ExposureFilter.fromConfig({ expose });
+  } else {
+    exposureFilter = new ExposureFilter();
+  }
+  (program as unknown as Record<string, unknown>)._exposureFilter = exposureFilter;
 
   // Footer hints for discoverability
   program.addHelpText("after", [

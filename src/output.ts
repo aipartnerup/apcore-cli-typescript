@@ -65,6 +65,7 @@ export function formatModuleList(
   format: string,
   filterTags?: string[],
   showDeps = false,
+  exposureFilter?: { isExposed(moduleId: string): boolean },
 ): void {
   if (format === "table") {
     if (modules.length === 0 && filterTags && filterTags.length > 0) {
@@ -78,12 +79,17 @@ export function formatModuleList(
       return;
     }
 
-    const headers = showDeps ? ["ID", "Description", "Tags", "Deps"] : ["ID", "Description", "Tags"];
+    const headers = ["ID", "Description", "Tags"];
+    if (showDeps) headers.push("Deps");
+    if (exposureFilter) headers.push("Exposure");
     const rows = modules.map((m) => {
       const base = [m.id, truncate(m.description, 80), (m.tags ?? []).join(", ")];
       if (showDeps) {
         const deps = (m as unknown as Record<string, unknown>).dependencies;
         base.push(String(Array.isArray(deps) ? deps.length : 0));
+      }
+      if (exposureFilter) {
+        base.push(exposureFilter.isExposed(m.id ?? "") ? "\u2713" : "\u2014");
       }
       return base;
     });
@@ -98,6 +104,9 @@ export function formatModuleList(
       if (showDeps) {
         const deps = (m as unknown as Record<string, unknown>).dependencies;
         entry.dependency_count = Array.isArray(deps) ? deps.length : 0;
+      }
+      if (exposureFilter) {
+        entry.exposed = exposureFilter.isExposed(m.id ?? "");
       }
       return entry;
     });

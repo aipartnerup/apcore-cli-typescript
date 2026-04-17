@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`createCli({ app })` — `APCore` unified client**: `CreateCliOptions` now accepts an `app?: APCore` field. When provided, `app.registry` and `app.executor` are extracted and used in place of explicit `registry`/`executor` fields. Passing `app` together with `registry` or `executor` throws `"app is mutually exclusive with registry/executor"`.
 - `APCore` interface exported from package index. `StrategyInfo` and `StrategyStep` interfaces exported from package index.
 - `Executor` interface extended with optional `describePipeline(strategyName?: string): StrategyInfo` and `strategy?: { steps: StrategyStep[] }` fields.
+- **FE-12: Module Exposure Filtering** — Declarative control over which discovered modules are exposed as CLI commands.
+  - `ExposureFilter` class in `exposure.ts` with `isExposed(moduleId)` and `filterModules(ids)` methods.
+  - Three modes: `all` (default), `include` (whitelist), `exclude` (blacklist) with glob-pattern matching.
+  - `ExposureFilter.fromConfig(obj)` static method for loading from `apcore.yaml` `expose` section.
+  - `CreateCliOptions.expose` field accepting object or `ExposureFilter` instance.
+  - `list --exposure {exposed,hidden,all}` filter flag in discovery commands.
+  - `GroupedModuleGroup` integration: applies exposure filter during command registration.
+  - `ConfigResolver` gains `expose.*` config keys.
+  - 4-tier config precedence: `CreateCliOptions.expose` > `--expose-mode` CLI flag > env var > `apcore.yaml`.
+  - Hidden modules remain invocable via `exec <module_id>`.
+- New file: `exposure.ts`.
 
 ---
 

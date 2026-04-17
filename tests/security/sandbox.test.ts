@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { Sandbox } from "../../src/security/sandbox.js";
+import { ModuleExecutionError } from "../../src/errors.js";
 import type { Executor } from "../../src/cli.js";
 
 describe("Sandbox", () => {
@@ -19,10 +20,17 @@ describe("Sandbox", () => {
       expect(mockExecutor.execute).toHaveBeenCalledWith("test.mod", { x: 1 });
     });
 
-    it("runs in subprocess when enabled", async () => {
+    it("throws clear error when enabled (subprocess isolation not yet implemented)", async () => {
+      // Per audit D9-009: the broken stub-runner path was deleted in v0.6.x.
+      // Sandbox now throws an informative error when enabled=true. Subprocess
+      // isolation is tracked as future work — see tech-design §8.6.4.
       const sandbox = new Sandbox(true);
-      const result = await sandbox.execute("test.mod", {}, mockExecutor);
-      expect(result).toBeDefined();
+      await expect(
+        sandbox.execute("test.mod", {}, mockExecutor),
+      ).rejects.toBeInstanceOf(ModuleExecutionError);
+      await expect(
+        sandbox.execute("test.mod", {}, mockExecutor),
+      ).rejects.toThrow(/not yet implemented/);
     });
   });
 });

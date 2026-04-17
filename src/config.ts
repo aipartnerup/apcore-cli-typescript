@@ -11,26 +11,31 @@ import yaml from "js-yaml";
 // Types
 // ---------------------------------------------------------------------------
 
-/** Default configuration values. */
+/**
+ * Default configuration values.
+ *
+ * Audit D9 (config cleanup, v0.6.x): the entries `sandbox.enabled`,
+ * `cli.auto_approve`, `cli.stdin_buffer_limit`, and the eight `apcore-cli.*`
+ * namespace aliases were removed because no production code path reads
+ * them via `resolve()`. Sandbox is configured via the `--sandbox` CLI flag,
+ * auto-approve via `--yes`, the stdin buffer is hard-coded, and namespace
+ * aliases are registered separately by `apcore-js`'s Config Bus when
+ * `registerConfigNamespace()` runs at `createCli` startup. The cross-key
+ * file-lookup mechanism (`NAMESPACE_TO_LEGACY` / `LEGACY_TO_NAMESPACE`)
+ * still works regardless — it does not depend on these DEFAULTS entries.
+ */
 export const DEFAULTS: Record<string, unknown> = {
   "extensions.root": "./extensions",
   "logging.level": "WARNING",
-  "sandbox.enabled": false,
-  "cli.stdin_buffer_limit": 10_485_760,
-  "cli.auto_approve": false,
   "cli.help_text_max_length": 1000,
-  // Namespace-mode aliases (apcore >= 0.15.0 Config Bus)
-  "apcore-cli.stdin_buffer_limit": 10_485_760,
-  "apcore-cli.auto_approve": false,
-  "apcore-cli.help_text_max_length": 1000,
-  "apcore-cli.logging_level": "WARNING",
   // FE-11 config keys
   "cli.approval_timeout": 60,
   "cli.strategy": "standard",
   "cli.group_depth": 1,
-  "apcore-cli.approval_timeout": 60,
-  "apcore-cli.strategy": "standard",
-  "apcore-cli.group_depth": 1,
+  // Exposure filtering (FE-12)
+  "expose.mode": "all",
+  "expose.include": [],
+  "expose.exclude": [],
 };
 
 /** Namespace key ↔ legacy key mapping for backward compatibility. */

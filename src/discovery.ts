@@ -67,6 +67,7 @@ function getAnnotationFlag(moduleDef: ModuleDescriptor, flag: string): boolean {
 export function registerDiscoveryCommands(
   cli: Command,
   registry: Registry,
+  exposureFilter?: import("./exposure.js").ExposureFilter,
 ): void {
   const listCmd = new Command("list")
     .description("List available modules in the registry.")
@@ -88,6 +89,11 @@ export function registerDiscoveryCommands(
     .option("--reverse", "Reverse sort order.", false)
     .option("--deprecated", "Include deprecated modules.", false)
     .option("--deps", "Show dependency count column.", false)
+    .addOption(
+      new Option("--exposure <mode>", "Filter by exposure status.")
+        .choices(["exposed", "hidden", "all"])
+        .default("exposed"),
+    )
     .action((opts: {
       tag: string[];
       flat: boolean;
@@ -99,6 +105,7 @@ export function registerDiscoveryCommands(
       reverse: boolean;
       deprecated: boolean;
       deps: boolean;
+      exposure: string;
     }) => {
       // Validate tags
       for (const t of opts.tag) {
@@ -169,9 +176,22 @@ export function registerDiscoveryCommands(
         modules.reverse();
       }
 
+      // Exposure filter (FE-12)
+      let showExposureCol = false;
+      if (exposureFilter && opts.exposure !== "all") {
+        if (opts.exposure === "exposed") {
+          modules = modules.filter((m) => exposureFilter.isExposed(m.id ?? ""));
+        } else if (opts.exposure === "hidden") {
+          modules = modules.filter((m) => !exposureFilter.isExposed(m.id ?? ""));
+        }
+      }
+      if (opts.exposure === "all" && exposureFilter) {
+        showExposureCol = true;
+      }
+
       const fmt = resolveFormat(opts.format);
       const filterTagsArg = opts.tag.length > 0 ? opts.tag : undefined;
-      formatModuleList(modules, fmt, filterTagsArg, opts.deps);
+      formatModuleList(modules, fmt, filterTagsArg, opts.deps, showExposureCol ? exposureFilter : undefined);
     });
   cli.addCommand(listCmd);
 
