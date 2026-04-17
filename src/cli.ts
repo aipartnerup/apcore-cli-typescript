@@ -25,6 +25,22 @@ export interface Registry {
   getModule(moduleId: string): ModuleDescriptor | null;
 }
 
+/** Strategy info returned by Executor.describePipeline(). */
+export interface StrategyInfo {
+  name: string;
+  stepCount: number;
+  stepNames: string[];
+  description: string;
+}
+
+/** A step in the executor strategy. */
+export interface StrategyStep {
+  name: string;
+  pure: boolean;
+  removable: boolean;
+  timeoutMs: number;
+}
+
 /** Placeholder for apcore-js Executor. */
 export interface Executor {
   execute(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
@@ -36,6 +52,10 @@ export interface Executor {
   stream?(moduleId: string, input: Record<string, unknown>): AsyncIterable<unknown>;
   /** Call a module (synchronous-style, used by system commands). */
   call?(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
+  /** Describe the current execution pipeline. Returns StrategyInfo (apcore-js >= 0.18.0). */
+  describePipeline?(strategyName?: string): StrategyInfo;
+  /** The executor's strategy object exposing step metadata. */
+  strategy?: { steps: StrategyStep[] };
 }
 
 /** Result of a preflight validation check. */

@@ -178,11 +178,26 @@ export function emitErrorTty(e: unknown, exitCode: number): void {
 // createCli
 // ---------------------------------------------------------------------------
 
+/**
+ * APCore unified client facade (apcore-js >= 0.18.0).
+ * Exposes registry and executor as top-level properties.
+ */
+export interface APCore {
+  registry: Registry;
+  executor: Executor;
+}
+
 /** Options for createCli. */
 export interface CreateCliOptions {
   extensionsDir?: string;
   progName?: string;
   verbose?: boolean;
+  /**
+   * APCore unified client instance (apcore-js >= 0.18.0).
+   * Mutually exclusive with registry/executor — providing app alongside
+   * either of those will throw.
+   */
+  app?: APCore;
   /** Pre-populated Registry instance. Skips filesystem discovery when provided. */
   registry?: Registry;
   /** Pre-built Executor instance. Used alongside registry. */
@@ -208,10 +223,12 @@ export function createCli(
   let registry: Registry | undefined;
   let executor: Executor | undefined;
   let extraCommands: Command[] | undefined;
+  let app: APCore | undefined;
   if (typeof extensionsDirOrOpts === "object" && extensionsDirOrOpts !== null) {
     extensionsDir = extensionsDirOrOpts.extensionsDir;
     progName = extensionsDirOrOpts.progName ?? progName;
     verbose = extensionsDirOrOpts.verbose ?? verbose;
+    app = extensionsDirOrOpts.app;
     registry = extensionsDirOrOpts.registry;
     executor = extensionsDirOrOpts.executor;
     extraCommands = extensionsDirOrOpts.extraCommands;
@@ -238,6 +255,17 @@ export function createCli(
     .option("--binding <path>", "Path to binding.yaml for display overlay")
     .option("--log-level <level>", "Logging level (DEBUG|INFO|WARNING|ERROR)", "WARNING")
     .option("--verbose", "Show all options in help output (including built-in apcore options)");
+
+  // Validate parameter combination: app is mutually exclusive with registry/executor.
+  if (app && (registry || executor)) {
+    throw new Error("app is mutually exclusive with registry/executor");
+  }
+
+  // Extract registry/executor from APCore unified client when provided.
+  if (app) {
+    registry = app.registry;
+    executor = app.executor;
+  }
 
   // Validate parameter combination: executor without registry is invalid.
   if (executor && !registry) {

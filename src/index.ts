@@ -6,11 +6,11 @@
 
 // Core CLI
 export { createCli, main, buildModuleCommand, validateModuleId, collectInput, reconvertEnumValues, applyToolkitIntegration, verboseHelp, setVerboseHelp, docsUrl, setDocsUrl, emitErrorJson, emitErrorTty } from "./main.js";
-export type { OptionConfig, CreateCliOptions } from "./main.js";
+export type { OptionConfig, CreateCliOptions, APCore } from "./main.js";
 
 // Lazy module loading
 export { LazyModuleGroup, GroupedModuleGroup, LazyGroup, BUILTIN_COMMANDS } from "./cli.js";
-export type { Registry, Executor, ModuleDescriptor, PreflightResult, PreflightCheck, PipelineTrace, PipelineTraceStep } from "./cli.js";
+export type { Registry, Executor, ModuleDescriptor, PreflightResult, PreflightCheck, PipelineTrace, PipelineTraceStep, StrategyInfo, StrategyStep } from "./cli.js";
 
 // Approval
 export { CliApprovalHandler } from "./approval.js";

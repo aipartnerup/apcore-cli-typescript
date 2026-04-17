@@ -136,6 +136,52 @@ describe("createCli() with pre-populated registry", () => {
 });
 
 // ---------------------------------------------------------------------------
+// createCli with APCore app client
+// ---------------------------------------------------------------------------
+
+describe("createCli() with APCore app client", () => {
+  const mockRegistry = {
+    listModules: vi.fn(() => [makeMod("test.module", "A test module")]),
+    getModule: vi.fn(() => null),
+  };
+
+  const mockExecutor = {
+    execute: vi.fn(async () => ({})),
+  };
+
+  const mockApp = {
+    registry: mockRegistry,
+    executor: mockExecutor,
+  };
+
+  it("throws if app and registry are both provided", () => {
+    expect(() =>
+      createCli({ app: mockApp, registry: mockRegistry, progName: "t" }),
+    ).toThrow("mutually exclusive");
+  });
+
+  it("throws if app and executor are both provided", () => {
+    expect(() =>
+      createCli({ app: mockApp, executor: mockExecutor, progName: "t" }),
+    ).toThrow("mutually exclusive");
+  });
+
+  it("accepts APCore app and extracts registry and executor", () => {
+    expect(() =>
+      createCli({ app: mockApp, progName: "test-cli" }),
+    ).not.toThrow();
+    const cli = createCli({ app: mockApp, progName: "test-cli" });
+    expect(cli.name()).toBe("test-cli");
+  });
+
+  it("app registry and executor are wired onto the returned program", () => {
+    const cli = createCli({ app: mockApp, progName: "test-cli" });
+    expect((cli as unknown as Record<string, unknown>)._registry).toBe(mockApp.registry);
+    expect((cli as unknown as Record<string, unknown>)._executor).toBe(mockApp.executor);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildModuleCommand
 // ---------------------------------------------------------------------------
 

@@ -5,6 +5,22 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-04-15
+
+### Changed
+
+- **Dependency bump**: requires `apcore-js >= 0.18.0` (was `>= 0.17.1`). Aligns with upstream breaking changes in `apcore-js 0.18.0` and `apcore-toolkit 0.4.2`.
+- **`MAX_MODULE_ID_LENGTH` 128 → 192**: `validateModuleId()` now enforces a 192-character limit for module IDs, up from 128, to accommodate Java/.NET deep-namespace FQN-derived IDs (PROTOCOL_SPEC §2.7 spec 1.6.0-draft).
+- **`Executor.describePipeline()` returns `StrategyInfo`**: `describe-pipeline` command in `strategy.ts` now calls `executor.describePipeline(strategyName)` and consumes the returned `StrategyInfo` object (`name`, `stepCount`, `stepNames`, `description`). Pipeline header format updated to `Pipeline: ${info.name} (${info.stepCount} steps)`. Step metadata (Pure/Removable/Timeout columns) sourced from `executor.strategy.steps` (`pure: boolean`, `removable: boolean`, `timeoutMs: number`). Falls back to static preset table when `describePipeline` is not available.
+
+### Added
+
+- **`createCli({ app })` — `APCore` unified client**: `CreateCliOptions` now accepts an `app?: APCore` field. When provided, `app.registry` and `app.executor` are extracted and used in place of explicit `registry`/`executor` fields. Passing `app` together with `registry` or `executor` throws `"app is mutually exclusive with registry/executor"`.
+- `APCore` interface exported from package index. `StrategyInfo` and `StrategyStep` interfaces exported from package index.
+- `Executor` interface extended with optional `describePipeline(strategyName?: string): StrategyInfo` and `strategy?: { steps: StrategyStep[] }` fields.
+
+---
+
 ## [0.6.0] - 2026-04-06
 
 ### Changed
