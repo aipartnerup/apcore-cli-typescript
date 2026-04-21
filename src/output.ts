@@ -356,7 +356,9 @@ export function formatPreflightResult(result: PreflightResult, format?: string):
   if (resolved === "json" || !process.stdout.isTTY) {
     const payload: Record<string, unknown> = {
       valid: result.valid,
-      requires_approval: result.requires_approval,
+      // JSON output key stays snake_case for cross-language CLI contract;
+      // runtime read uses camelCase to match apcore-js PreflightResult.
+      requires_approval: result.requiresApproval,
       checks: result.checks.map((c) => {
         const entry: Record<string, unknown> = { check: c.check, passed: c.passed };
         if (c.error !== undefined && c.error !== null) {

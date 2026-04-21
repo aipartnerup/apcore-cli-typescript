@@ -30,7 +30,6 @@
 - Node.js >= 18
 - Package manager: pnpm
 - Key dependencies: commander, js-yaml, @sinclair/typebox
-- Peer dependencies: apcore-js >= 0.17.1, apcore-toolkit >= 0.4 (optional)
 
 ## v0.6.0 Conventions
 
@@ -48,8 +47,14 @@
 - validate module registers validate command + --dry-run flag — FE-11.
 - Config Bus namespace registration in registerConfigNamespace() at createCli start.
 - AuditLogger is wired in createCli via setAuditLogger() at startup (parity with Python).
-- Known gap: Registry / Executor / ModuleDescriptor types in src/cli.ts are local
-  placeholder interfaces pending upstream export from apcore-js.
+- Known gap: Registry / ModuleDescriptor types in src/cli.ts are still local
+  placeholder interfaces. Their method names (`listModules` / `getModule`) and
+  descriptor field name (`id`) do NOT match upstream apcore-js (`list` /
+  `getDefinition` / `moduleId`). Users must adapt their real apcore-js registry
+  instances to this local shape (or pass wrappers). The Executor placeholder
+  and the PipelineTrace / PreflightResult / StrategyStep runtime-read shapes
+  were aligned with upstream camelCase in the 0.19.0 upgrade — only the
+  Registry / ModuleDescriptor side remains divergent.
 - Known gap: Sandbox.execute() throws an informative error when enabled=true —
   subprocess isolation is not yet implemented. Disabled path is a passthrough to
   executor.execute(). See tech-design §8.6.4.

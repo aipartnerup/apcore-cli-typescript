@@ -99,6 +99,8 @@ const ERROR_CODE_MAP: Record<string, number> = {
   MODULE_NOT_FOUND: 44,
   MODULE_LOAD_ERROR: 44,
   MODULE_DISABLED: 44,
+  DEPENDENCY_NOT_FOUND: 44,
+  DEPENDENCY_VERSION_MISMATCH: 44,
   SCHEMA_VALIDATION_ERROR: 45,
   SCHEMA_CIRCULAR_REF: 48,
   APPROVAL_DENIED: 46,
@@ -381,6 +383,29 @@ export function createCli(
  * Uses dynamic import so the dependency remains optional — if apcore-toolkit
  * is not installed, a warning is printed and the CLI continues without it.
  */
+/**
+ * Module-level binding display overlay map: moduleId → resolved `display`
+ * metadata (as produced by `DisplayResolver.resolve()`). Consulted by
+ * `getDisplay()` when a `ModuleDescriptor`'s own `metadata.display` is absent.
+ */
+const bindingDisplayMap = new Map<string, Record<string, unknown>>();
+
+/**
+ * Internal accessor for the binding display overlay map — used by
+ * `display-helpers.ts#getDisplay` as a fallback when the descriptor itself
+ * carries no resolved display metadata.
+ */
+export function lookupBindingDisplay(moduleId: string): Record<string, unknown> | undefined {
+  return bindingDisplayMap.get(moduleId);
+}
+
+/**
+ * Clear the binding display overlay map. Primarily for tests.
+ */
+export function clearBindingDisplayMap(): void {
+  bindingDisplayMap.clear();
+}
+
 export async function applyToolkitIntegration(
   commandsDir?: string,
   bindingPath?: string,
@@ -389,28 +414,72 @@ export async function applyToolkitIntegration(
     return;
   }
 
+  let toolkit: Record<string, unknown>;
   try {
-    // Use a variable to prevent TypeScript from resolving the module at build time
+    // String indirection prevents bundlers from statically resolving the
+    // optional peer dependency at build time.
     const toolkitModule = "apcore-toolkit";
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const toolkit = await import(/* @vite-ignore */ toolkitModule);
-
-    // ConventionScanner is not yet available in the TypeScript toolkit
-    if (commandsDir) {
-      console.warn("Convention scanning not yet available in TypeScript toolkit");
-    }
-
-    // DisplayResolver for binding overlay
-    if (bindingPath) {
-      const resolver = new toolkit.DisplayResolver();
-      // NOTE: Full integration requires registered modules from apcore-js.
-      // For now, the resolver is instantiated and ready for when modules
-      // are available through the registry.
-      void resolver;
-    }
+    toolkit = await import(/* @vite-ignore */ toolkitModule) as Record<string, unknown>;
   } catch {
-    // apcore-toolkit not installed — graceful fallback
     console.warn("apcore-toolkit not installed — toolkit features unavailable");
+    return;
+  }
+
+  // ConventionScanner has no TypeScript equivalent (the Python adapter is
+  // pydantic-specific and does not port cleanly). See the upstream
+  // apcore-toolkit README for the tri-language parity note.
+  if (commandsDir) {
+    console.warn("Convention scanning not available in the TypeScript toolkit");
+  }
+
+  if (bindingPath) {
+    try {
+      await loadBindingDisplayOverlay(toolkit, bindingPath);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`apcore-toolkit: failed to load binding '${bindingPath}': ${msg}`);
+    }
+  }
+}
+
+/**
+ * Parse a `.binding.yaml` (or directory thereof) and populate the module-level
+ * `bindingDisplayMap` with resolved display overlay entries. Uses the
+ * apcore-toolkit `BindingLoader` + `DisplayResolver` pipeline so the overlay
+ * produced here is identical to what apcore-toolkit's registry-writer would
+ * emit at scan time.
+ */
+async function loadBindingDisplayOverlay(
+  toolkit: Record<string, unknown>,
+  bindingPath: string,
+): Promise<void> {
+  const BindingLoaderCtor = toolkit.BindingLoader as
+    | (new () => { load(path: string): unknown[] })
+    | undefined;
+  const DisplayResolverCtor = toolkit.DisplayResolver as
+    | (new () => { resolve(mods: unknown[], opts?: { bindingPath?: string }): unknown[] })
+    | undefined;
+
+  if (!BindingLoaderCtor || !DisplayResolverCtor) {
+    // apcore-toolkit < 0.5.0 (no BindingLoader) — silently skip the overlay.
+    return;
+  }
+
+  const loader = new BindingLoaderCtor();
+  const scanned = loader.load(bindingPath);
+  const resolver = new DisplayResolverCtor();
+  const resolved = resolver.resolve(scanned, { bindingPath });
+
+  for (const mod of resolved) {
+    if (!mod || typeof mod !== "object") continue;
+    const entry = mod as { moduleId?: unknown; metadata?: unknown };
+    const id = typeof entry.moduleId === "string" ? entry.moduleId : null;
+    if (!id) continue;
+    const meta = (entry.metadata as Record<string, unknown> | undefined) ?? {};
+    const display = meta.display;
+    if (display && typeof display === "object" && !Array.isArray(display)) {
+      bindingDisplayMap.set(id, display as Record<string, unknown>);
+    }
   }
 }
 
@@ -704,16 +773,18 @@ export function buildModuleCommand(
         // Print result
         const resolved = resolveFormat(outputFormat);
         if (resolved === "json" || !process.stdout.isTTY) {
-          // Merge _trace into JSON output
+          // Merge _trace into JSON output. JSON keys remain snake_case to
+          // match the cross-language CLI output contract; runtime reads use
+          // the camelCase shape returned by apcore-js PipelineTrace.
           const traceData = {
-            strategy: trace.strategy_name,
-            total_duration_ms: trace.total_duration_ms,
+            strategy: trace.strategyName,
+            total_duration_ms: trace.totalDurationMs,
             success: trace.success,
             steps: trace.steps.map((s) => ({
               name: s.name,
-              duration_ms: s.duration_ms,
+              duration_ms: s.durationMs,
               skipped: s.skipped,
-              ...(s.skipped ? { skip_reason: s.skip_reason } : {}),
+              ...(s.skipped ? { skip_reason: s.skipReason ?? null } : {}),
             })),
           };
           let output: Record<string, unknown>;
@@ -728,15 +799,15 @@ export function buildModuleCommand(
           // Print trace to stderr
           const stepCount = trace.steps.length;
           process.stderr.write(
-            `\nPipeline Trace (strategy: ${trace.strategy_name}, ` +
-            `${stepCount} steps, ${trace.total_duration_ms.toFixed(1)}ms)\n`,
+            `\nPipeline Trace (strategy: ${trace.strategyName}, ` +
+            `${stepCount} steps, ${trace.totalDurationMs.toFixed(1)}ms)\n`,
           );
           for (const s of trace.steps) {
             if (s.skipped) {
-              const reason = s.skip_reason ?? "n/a";
+              const reason = s.skipReason ?? "n/a";
               process.stderr.write(`  \u25cb ${s.name.padEnd(24)} ${"\u2014".padStart(8)}  skipped (${reason})\n`);
             } else {
-              process.stderr.write(`  \u2713 ${s.name.padEnd(24)} ${(s.duration_ms.toFixed(1) + "ms").padStart(8)}\n`);
+              process.stderr.write(`  \u2713 ${s.name.padEnd(24)} ${(s.durationMs.toFixed(1) + "ms").padStart(8)}\n`);
             }
           }
         }

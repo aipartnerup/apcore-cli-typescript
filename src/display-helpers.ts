@@ -3,9 +3,19 @@
  */
 
 import type { ModuleDescriptor } from "./cli.js";
+import { lookupBindingDisplay } from "./main.js";
 
 /**
  * Extract resolved display overlay from a ModuleDescriptor's metadata.
+ *
+ * Resolution order:
+ *   1. `descriptor.metadata.display` — overlay already baked into the
+ *      descriptor (e.g. applied by apcore-toolkit's RegistryWriter at
+ *      discovery time).
+ *   2. Binding display map — populated by
+ *      `applyToolkitIntegration(undefined, bindingPath)` from a
+ *      `.binding.yaml` supplied via `--binding`. Used as a fallback when
+ *      the descriptor was registered without overlay metadata.
  */
 export function getDisplay(descriptor: ModuleDescriptor): Record<string, unknown> {
   const metadata = descriptor.metadata ?? {};
@@ -13,7 +23,8 @@ export function getDisplay(descriptor: ModuleDescriptor): Record<string, unknown
   if (display && typeof display === "object" && !Array.isArray(display)) {
     return display as Record<string, unknown>;
   }
-  return {};
+  const overlay = lookupBindingDisplay(descriptor.id);
+  return overlay ?? {};
 }
 
 /**

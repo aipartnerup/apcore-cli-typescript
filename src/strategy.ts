@@ -6,6 +6,57 @@ import { Command, Option } from "commander";
 import type { Executor, StrategyInfo } from "./cli.js";
 import { resolveFormat } from "./output.js";
 
+/**
+ * Look up `StrategyInfo` for an arbitrary strategy name.
+ *
+ * apcore-js exposes two introspection entry points:
+ *   - `Executor.listStrategies()` (static): returns info for all globally
+ *     registered strategies.
+ *   - `executor.describePipeline()` (instance, no args): returns info for
+ *     the executor's *currently-set* strategy only.
+ *
+ * To describe a non-current strategy we need the static `listStrategies`.
+ * We reach it via the runtime constructor of the executor instance so the
+ * CLI does not have to directly import the apcore-js `Executor` class
+ * (preserves the loose structural contract used elsewhere in this package).
+ *
+ * Returns `{ info, isCurrent }` so the caller does not need a second
+ * `describePipeline()` invocation to ask the same "is this the current
+ * strategy?" question — only the current strategy exposes step-level
+ * metadata (`executor.currentStrategy.steps`).
+ */
+function lookupStrategyInfo(
+  executor: Executor,
+  strategyName: string,
+): { info: StrategyInfo | null; isCurrent: boolean } {
+  // 1. Is the requested strategy the executor's current one?
+  if (typeof executor.describePipeline === "function") {
+    try {
+      const current = executor.describePipeline();
+      if (current && current.name === strategyName) {
+        return { info: current, isCurrent: true };
+      }
+    } catch {
+      // Fall through to the static lookup.
+    }
+  }
+
+  // 2. Walk the static registry via the constructor.
+  const ctor = (executor as unknown as { constructor?: unknown }).constructor as
+    | { listStrategies?: () => StrategyInfo[] }
+    | undefined;
+  if (ctor && typeof ctor.listStrategies === "function") {
+    try {
+      const all = ctor.listStrategies();
+      const info = all.find((s) => s.name === strategyName) ?? null;
+      return { info, isCurrent: false };
+    } catch {
+      return { info: null, isCurrent: false };
+    }
+  }
+  return { info: null, isCurrent: false };
+}
+
 /** Preset pipeline steps for each strategy. */
 const PRESET_STEPS: Record<string, string[]> = {
   standard: [
@@ -76,19 +127,15 @@ export function registerPipelineCommand(cli: Command, executor: Executor): void 
     .action((opts: { strategy: string; format?: string }) => {
       const fmt = resolveFormat(opts.format);
 
-      // Try to get strategy info via executor.describePipeline() (apcore-js >= 0.18.0)
-      let info: StrategyInfo | null = null;
-      if (typeof executor.describePipeline === "function") {
-        try {
-          info = executor.describePipeline(opts.strategy);
-        } catch {
-          info = null;
-        }
-      }
+      // Look up info for the requested strategy (current strategy via
+      // describePipeline(), arbitrary strategy via Executor.listStrategies()).
+      const { info, isCurrent } = lookupStrategyInfo(executor, opts.strategy);
 
       if (info) {
-        // Use StrategyInfo from executor.describePipeline() plus executor.strategy.steps for metadata
-        const strategySteps = executor.strategy?.steps ?? [];
+        // Step metadata (pure/removable/timeoutMs) is only available for the
+        // executor's *current* strategy via `currentStrategy.steps` — other
+        // registered strategies expose only their `StrategyInfo` summary.
+        const strategySteps = isCurrent ? (executor.currentStrategy?.steps ?? []) : [];
         const header = `Pipeline: ${info.name} (${info.stepCount} steps)`;
 
         if (fmt === "json" || !process.stdout.isTTY) {

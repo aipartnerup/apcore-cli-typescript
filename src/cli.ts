@@ -34,15 +34,15 @@ export interface StrategyInfo {
   description: string;
 }
 
-/** A step in the executor strategy. */
+/** A step in the executor strategy (shape parity with apcore-js Step). */
 export interface StrategyStep {
   name: string;
-  pure: boolean;
+  pure?: boolean;
   removable: boolean;
-  timeoutMs: number;
+  timeoutMs?: number;
 }
 
-/** Placeholder for apcore-js Executor. */
+/** Placeholder for apcore-js Executor. Shape-compatible with apcore-js >= 0.19.0. */
 export interface Executor {
   execute(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
   /** Validate inputs without executing. Returns a PreflightResult. */
@@ -53,41 +53,47 @@ export interface Executor {
   stream?(moduleId: string, input: Record<string, unknown>): AsyncIterable<unknown>;
   /** Call a module (synchronous-style, used by system commands). */
   call?(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
-  /** Describe the current execution pipeline. Returns StrategyInfo (apcore-js >= 0.18.0). */
-  describePipeline?(strategyName?: string): StrategyInfo;
-  /** The executor's strategy object exposing step metadata. */
-  strategy?: { steps: StrategyStep[] };
+  /**
+   * Describe the executor's currently-set strategy. Returns StrategyInfo
+   * (apcore-js >= 0.18.0). Takes no arguments — to introspect a different
+   * strategy, use `Executor.listStrategies()` (static) via `executor.constructor`.
+   */
+  describePipeline?(): StrategyInfo;
+  /** The current execution strategy object, exposing step metadata. */
+  currentStrategy?: { readonly steps: readonly StrategyStep[] };
 }
 
 /** Result of a preflight validation check. */
 export interface PreflightCheck {
-  check: string;
-  passed: boolean;
-  error?: unknown;
-  warnings?: string[];
+  readonly check: string;
+  readonly passed: boolean;
+  readonly error?: unknown;
+  readonly warnings?: string[];
 }
 
-/** Result of executor.validate(). */
+/** Result of executor.validate() — parity with apcore-js PreflightResult. */
 export interface PreflightResult {
-  valid: boolean;
-  requires_approval: boolean;
-  checks: PreflightCheck[];
+  readonly valid: boolean;
+  readonly requiresApproval: boolean;
+  readonly checks: readonly PreflightCheck[];
+  readonly errors?: ReadonlyArray<Record<string, unknown>>;
 }
 
-/** A single step in a pipeline trace. */
+/** A single step in a pipeline trace — parity with apcore-js StepTrace. */
 export interface PipelineTraceStep {
-  name: string;
-  duration_ms: number;
-  skipped: boolean;
-  skip_reason?: string;
+  readonly name: string;
+  readonly durationMs: number;
+  readonly skipped: boolean;
+  readonly skipReason?: string | null;
 }
 
-/** Pipeline execution trace returned by callWithTrace(). */
+/** Pipeline execution trace returned by callWithTrace() — parity with apcore-js PipelineTrace. */
 export interface PipelineTrace {
-  strategy_name: string;
-  total_duration_ms: number;
-  success: boolean;
-  steps: PipelineTraceStep[];
+  readonly moduleId?: string;
+  readonly strategyName: string;
+  readonly totalDurationMs: number;
+  readonly success: boolean;
+  readonly steps: readonly PipelineTraceStep[];
 }
 
 /** Placeholder for apcore-js ModuleDescriptor. */

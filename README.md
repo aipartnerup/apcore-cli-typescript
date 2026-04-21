@@ -49,9 +49,9 @@ Terminal adapter for apcore. Execute AI-Perceivable modules from the command lin
 pnpm add apcore-cli apcore-js
 ```
 
-Requires Node.js 18+ and `apcore-js >= 0.17.1`.
+Requires Node.js 18+ and `apcore-js >= 0.19.0`.
 
-**Optional:** install `apcore-toolkit` (>=0.4.0) to enable display overlay and registry writer integration via `applyToolkitIntegration`, `DisplayResolver`, and `RegistryWriter`.
+**Optional:** install `apcore-toolkit` (>=0.5.0) to enable display overlay and registry writer integration via `applyToolkitIntegration`, `DisplayResolver`, and `RegistryWriter`.
 
 ```bash
 pnpm add apcore-cli apcore-js
