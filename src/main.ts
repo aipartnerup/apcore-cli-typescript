@@ -41,6 +41,7 @@ import type { ApcliConfig } from "./builtin-group.js";
 import { ExposureFilter } from "./exposure.js";
 import { AuditLogger, setAuditLogger } from "./security/audit.js";
 import type { Executor, ModuleDescriptor, Registry } from "./cli.js";
+import { canonicalFormatHelp } from "./canonical-help.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -359,10 +360,13 @@ export function createCli(
 
   const program = new Command(resolvedProgName)
     .exitOverride()
-    .version(VERSION, "--version", `Show ${resolvedProgName} version`)
+    .version(VERSION, "-V, --version", "Print version")
+    .helpOption("-h, --help", "Print help")
+    .addHelpCommand("help [command]", "Print this message or the help of the given subcommand(s)")
     .description("apcore CLI — execute apcore modules from the command line")
     .option("--log-level <level>", "Logging level (DEBUG|INFO|WARNING|ERROR)", "WARNING")
     .option("--verbose", "Show all options in help output (including built-in apcore options)");
+  program.configureHelp({ formatHelp: canonicalFormatHelp });
 
   // Discovery flags are standalone-only (FE-13 T-APCLI-27/28).
   if (!registryInjected) {

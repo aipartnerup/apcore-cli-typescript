@@ -398,13 +398,29 @@ apcore Registry + Executor (your modules, unchanged)
 
 ## Development
 
+The conformance suite under `tests/conformance/` reads shared fixtures from
+the **spec repo** (`aiperceivable/apcore-cli`). Clone it as a sibling of
+this repo, or point `APCORE_CLI_SPEC_REPO` at an existing checkout:
+
 ```bash
+# One-time: clone both repos side by side
+git clone https://github.com/aiperceivable/apcore-cli.git
 git clone https://github.com/aiperceivable/apcore-cli-typescript.git
+
 cd apcore-cli-typescript
 pnpm install
-pnpm test                        # 275 tests across 17 suites
+pnpm test                        # reads fixtures from ../apcore-cli/conformance/
 pnpm build                       # compile TypeScript
 ```
+
+Alternative layout (spec repo checked out elsewhere):
+
+```bash
+export APCORE_CLI_SPEC_REPO=/path/to/apcore-cli
+pnpm test
+```
+
+CI does this automatically — see `.github/workflows/ci.yml`.
 
 ## License
 

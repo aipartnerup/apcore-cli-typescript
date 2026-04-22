@@ -1,20 +1,15 @@
 /**
  * FE-13 cross-language conformance fixture tests (T-APCLI-31).
  *
- * TODO: harmonize with Python when FE-13 lands upstream.
+ * All fixtures (create_cli.json / env.json / input.yaml / expected_help.txt)
+ * live in the spec repo at
+ *   ../apcore-cli/conformance/fixtures/apcli-visibility/<scenario>/
+ * and are shared across every SDK. Help output is byte-matched against the
+ * canonical clap-style format — TS reaches parity via
+ * src/canonical-help.ts (a Commander configureHelp override).
  *
- * Each scenario directory under conformance/fixtures/apcli-visibility/
- * declares:
- *   - input.yaml      (optional) — apcore.yaml content to materialize
- *   - env.json                    — env-var overlay (restored after run)
- *   - createCli.json              — createCli opts (serializable subset)
- *   - expected-help.txt           — golden program.helpInformation() output
- *
- * Because the Python reference has not yet shipped FE-13 (no
- * apcore_cli/builtin_group.py present), the golden files are generated
- * from the current TypeScript implementation and are self-consistent; a
- * follow-up task will replace them with Python-sourced fixtures when the
- * upstream port lands.
+ * Shared files use snake_case keys; the TS loader maps them to camelCase
+ * at the test boundary.
  */
 
 import fs from "node:fs";
@@ -32,9 +27,15 @@ import type { Registry, Executor, ModuleDescriptor } from "../../src/cli.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const FIXTURE_ROOT = path.resolve(
-  __dirname,
-  "../../conformance/fixtures/apcli-visibility",
+// In CI the spec repo is checked out separately; `APCORE_CLI_SPEC_REPO`
+// points at that checkout. Locally fall back to the sibling directory
+// layout (aipartnerup/apcore-cli alongside this repo).
+const SPEC_REPO_ROOT =
+  process.env.APCORE_CLI_SPEC_REPO ??
+  path.resolve(__dirname, "../../../apcore-cli");
+const FIXTURE_ROOT = path.join(
+  SPEC_REPO_ROOT,
+  "conformance/fixtures/apcli-visibility",
 );
 
 // ---------------------------------------------------------------------------
@@ -66,16 +67,33 @@ interface ScenarioOpts {
   apcli?: unknown;
 }
 
+interface SharedCreateCli {
+  prog_name?: string;
+  registry_injected?: boolean;
+  apcli?: unknown;
+}
+
+function mapSharedOpts(shared: SharedCreateCli): ScenarioOpts {
+  const out: ScenarioOpts = {};
+  if (shared.prog_name !== undefined) out.progName = shared.prog_name;
+  if (shared.registry_injected !== undefined)
+    out.registryInjected = shared.registry_injected;
+  if (shared.apcli !== undefined) out.apcli = shared.apcli;
+  return out;
+}
+
 function withScenario<T>(
-  dir: string,
+  scenario: string,
   run: (opts: ScenarioOpts) => T,
 ): T {
+  const dir = path.join(FIXTURE_ROOT, scenario);
   const env = JSON.parse(
     fs.readFileSync(path.join(dir, "env.json"), "utf8"),
   ) as Record<string, string>;
-  const opts = JSON.parse(
-    fs.readFileSync(path.join(dir, "createCli.json"), "utf8"),
-  ) as ScenarioOpts;
+  const shared = JSON.parse(
+    fs.readFileSync(path.join(dir, "create_cli.json"), "utf8"),
+  ) as SharedCreateCli;
+  const opts = mapSharedOpts(shared);
 
   const yamlPath = path.join(dir, "input.yaml");
   const hasYaml = fs.existsSync(yamlPath);
@@ -110,8 +128,8 @@ function withScenario<T>(
   }
 }
 
-function captureHelp(dir: string): string {
-  return withScenario(dir, (opts) => {
+function captureHelp(scenario: string): string {
+  return withScenario(scenario, (opts) => {
     const finalOpts: Record<string, unknown> = {
       progName: opts.progName ?? "apcore-cli",
     };
@@ -128,15 +146,16 @@ function captureHelp(dir: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Golden generation — write expected-help.txt when APCLI_FIXTURE_UPDATE=1
+// Golden regeneration — writes into the SPEC REPO when APCLI_FIXTURE_UPDATE=1.
+// Off by default: the golden is a cross-language contract, not a local
+// snapshot. Humans curate it; this flag is only for iterating on the
+// canonical format during development.
 // ---------------------------------------------------------------------------
 
-function ensureGolden(dir: string): void {
-  const goldenPath = path.join(dir, "expected-help.txt");
-  const update = process.env.APCLI_FIXTURE_UPDATE === "1";
-  if (!update && fs.existsSync(goldenPath)) return;
-  const actual = captureHelp(dir);
-  fs.writeFileSync(goldenPath, actual, "utf8");
+function maybeRegenerateGolden(scenario: string): void {
+  if (process.env.APCLI_FIXTURE_UPDATE !== "1") return;
+  const goldenPath = path.join(FIXTURE_ROOT, scenario, "expected_help.txt");
+  fs.writeFileSync(goldenPath, captureHelp(scenario), "utf8");
 }
 
 // ---------------------------------------------------------------------------
@@ -152,22 +171,19 @@ const scenarios = fs.existsSync(FIXTURE_ROOT)
   : [];
 
 beforeAll(() => {
-  // First-run bootstrap: materialize golden files from the current TS impl
-  // when they are missing. Subsequent runs compare against them.
   for (const scenario of scenarios) {
-    ensureGolden(path.join(FIXTURE_ROOT, scenario));
+    maybeRegenerateGolden(scenario);
   }
 });
 
 for (const scenario of scenarios) {
   describe(`apcli visibility — ${scenario}`, () => {
     it("matches golden --help (T-APCLI-31)", () => {
-      const dir = path.join(FIXTURE_ROOT, scenario);
       const expected = fs.readFileSync(
-        path.join(dir, "expected-help.txt"),
+        path.join(FIXTURE_ROOT, scenario, "expected_help.txt"),
         "utf8",
       );
-      const actual = captureHelp(dir);
+      const actual = captureHelp(scenario);
       expect(actual).toBe(expected);
     });
   });

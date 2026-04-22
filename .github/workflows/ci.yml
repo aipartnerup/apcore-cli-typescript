@@ -13,6 +13,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout apcore-cli spec repo (conformance fixtures)
+        uses: actions/checkout@v4
+        with:
+          repository: aiperceivable/apcore-cli
+          path: .apcore-cli-spec
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -37,3 +43,5 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+        env:
+          APCORE_CLI_SPEC_REPO: ${{ github.workspace }}/.apcore-cli-spec
