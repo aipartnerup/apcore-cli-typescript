@@ -32,17 +32,20 @@ async function callSystemModule(
 
 /**
  * Emit a result as JSON when in non-TTY or when the caller requested
- * JSON format, otherwise invoke the provided TTY formatter.
+ * JSON format, otherwise invoke the TTY render callback. The callback
+ * closes over the caller's local state (moduleId, opts.reason, etc.) so
+ * each registrar can render its own TTY shape without threading those
+ * values through this helper.
  */
 function emitResult(
-  result: unknown,
+  jsonPayload: unknown,
   fmt: string,
-  ttyFormatter: (r: Record<string, unknown>) => void,
+  ttyRender: () => void,
 ): void {
   if (fmt === "json" || !process.stdout.isTTY) {
-    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    process.stdout.write(JSON.stringify(jsonPayload, null, 2) + "\n");
   } else {
-    ttyFormatter(result as Record<string, unknown>);
+    ttyRender();
   }
 }
 
@@ -166,13 +169,13 @@ export function registerHealthCommand(apcliGroup: Command, executor: Executor): 
             module_id: moduleId,
             error_limit: opts.errors,
           }) as Record<string, unknown>;
-          emitResult(result, fmt, formatHealthModuleTty);
+          emitResult(result, fmt, () => formatHealthModuleTty(result));
         } else {
           const result = await callSystemModule(executor, "system.health.summary", {
             error_rate_threshold: opts.threshold,
             include_healthy: opts.all,
           }) as Record<string, unknown>;
-          emitResult(result, fmt, formatHealthSummaryTty);
+          emitResult(result, fmt, () => formatHealthSummaryTty(result));
         }
       } catch (e) {
         emitErrorAndExit(e);
@@ -204,13 +207,13 @@ export function registerUsageCommand(apcliGroup: Command, executor: Executor): v
             period: opts.period,
           });
         }
-        if (fmt === "json" || !process.stdout.isTTY) {
-          process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-        } else if (moduleId) {
-          formatExecResult(result, fmt);
-        } else {
-          formatUsageSummaryTty(result as Record<string, unknown>);
-        }
+        emitResult(result, fmt, () => {
+          if (moduleId) {
+            formatExecResult(result, fmt);
+          } else {
+            formatUsageSummaryTty(result as Record<string, unknown>);
+          }
+        });
       } catch (e) {
         emitErrorAndExit(e);
       }
@@ -236,11 +239,9 @@ export function registerEnableCommand(apcliGroup: Command, executor: Executor): 
           enabled: true,
           reason: opts.reason,
         }) as Record<string, unknown>;
-        if (fmt === "json" || !process.stdout.isTTY) {
-          process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-        } else {
+        emitResult(result, fmt, () => {
           process.stdout.write(`Module '${moduleId}' enabled.\n  Reason: ${opts.reason}\n`);
-        }
+        });
       } catch (e) {
         emitErrorAndExit(e);
       }
@@ -266,11 +267,9 @@ export function registerDisableCommand(apcliGroup: Command, executor: Executor):
           enabled: false,
           reason: opts.reason,
         }) as Record<string, unknown>;
-        if (fmt === "json" || !process.stdout.isTTY) {
-          process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-        } else {
+        emitResult(result, fmt, () => {
           process.stdout.write(`Module '${moduleId}' disabled.\n  Reason: ${opts.reason}\n`);
-        }
+        });
       } catch (e) {
         emitErrorAndExit(e);
       }
@@ -295,16 +294,14 @@ export function registerReloadCommand(apcliGroup: Command, executor: Executor): 
           module_id: moduleId,
           reason: opts.reason,
         }) as Record<string, unknown>;
-        if (fmt === "json" || !process.stdout.isTTY) {
-          process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-        } else {
+        emitResult(result, fmt, () => {
           const prev = result.previous_version ?? "?";
           const newVer = result.new_version ?? "?";
           const dur = result.reload_duration_ms ?? "?";
           process.stdout.write(`Module '${moduleId}' reloaded.\n`);
           process.stdout.write(`  Version: ${prev} -> ${newVer}\n`);
           process.stdout.write(`  Duration: ${dur}ms\n`);
-        }
+        });
       } catch (e) {
         emitErrorAndExit(e);
       }
@@ -334,11 +331,9 @@ export function registerConfigCommand(apcliGroup: Command, executor: Executor): 
       try {
         const result = await callSystemModule(executor, "system.config.get", { key });
         const value = (result as Record<string, unknown>)?.value ?? result;
-        if (fmt === "json" || !process.stdout.isTTY) {
-          process.stdout.write(JSON.stringify({ key, value }, null, 2) + "\n");
-        } else {
+        emitResult({ key, value }, fmt, () => {
           process.stdout.write(`${key} = ${JSON.stringify(value)}\n`);
-        }
+        });
       } catch (e) {
         emitErrorAndExit(e);
       }
@@ -367,15 +362,13 @@ export function registerConfigCommand(apcliGroup: Command, executor: Executor): 
           value: parsedValue,
           reason: opts.reason,
         }) as Record<string, unknown>;
-        if (fmt === "json" || !process.stdout.isTTY) {
-          process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-        } else {
+        emitResult(result, fmt, () => {
           const old = result.old_value ?? "?";
           const newVal = result.new_value ?? "?";
           process.stdout.write(`Config updated: ${key}\n`);
           process.stdout.write(`  ${JSON.stringify(old)} -> ${JSON.stringify(newVal)}\n`);
           process.stdout.write(`  Reason: ${opts.reason}\n`);
-        }
+        });
       } catch (e) {
         emitErrorAndExit(e);
       }
