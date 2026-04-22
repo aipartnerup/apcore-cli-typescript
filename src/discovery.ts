@@ -8,8 +8,9 @@
  */
 
 import { Command, Option } from "commander";
+import { checkApproval } from "./approval.js";
 import type { Executor, ModuleDescriptor, Registry } from "./cli.js";
-import { EXIT_CODES } from "./errors.js";
+import { EXIT_CODES, exitCodeForError } from "./errors.js";
 import { validateModuleId, collectInput } from "./main.js";
 import {
   formatExecResult,
@@ -19,6 +20,7 @@ import {
   firstFailedExitCode,
   resolveFormat,
 } from "./output.js";
+import { getAuditLogger } from "./security/audit.js";
 
 const TAG_PATTERN = /^[a-z][a-z0-9_-]*$/;
 
@@ -251,9 +253,21 @@ export function registerExecCommand(
       "--input <json>",
       "JSON object passed as input to the module. Use '-' to read JSON from stdin.",
     )
+    .option("-y, --yes", "Auto-approve if the module declares requires_approval.", false)
+    .option(
+      "--approval-timeout <seconds>",
+      "Seconds to wait for interactive approval.",
+      parseInt,
+    )
     .action(async (
       moduleId: string,
-      opts: { format?: string; fields?: string; input?: string },
+      opts: {
+        format?: string;
+        fields?: string;
+        input?: string;
+        yes: boolean;
+        approvalTimeout?: number;
+      },
     ) => {
       validateModuleId(moduleId);
 
@@ -286,9 +300,34 @@ export function registerExecCommand(
         }
       }
 
-      const result = await executor.execute(moduleId, merged);
-      const fmt = resolveFormat(opts.format);
-      formatExecResult(result, fmt, opts.fields);
+      // Apply the same policy gates as buildModuleCommand (main.ts): approval
+      // check before dispatch, audit log success/error. Sandbox wiring is
+      // omitted here because apcli exec has no --sandbox flag; callers that
+      // need sandbox isolation invoke the per-module dispatch path instead.
+      const startTime = performance.now();
+      try {
+        await checkApproval(moduleDef, opts.yes, opts.approvalTimeout);
+        const result = await executor.execute(moduleId, merged);
+        const durationMs = Math.round(performance.now() - startTime);
+        const auditLogger = getAuditLogger();
+        if (auditLogger) {
+          auditLogger.logExecution(moduleId, merged, "success", 0, durationMs);
+        }
+        const fmt = resolveFormat(opts.format);
+        formatExecResult(result, fmt, opts.fields);
+      } catch (err: unknown) {
+        const exitCode = exitCodeForError(err);
+        try {
+          const auditLogger = getAuditLogger();
+          if (auditLogger) {
+            auditLogger.logExecution(moduleId, merged, "error", exitCode, 0);
+          }
+        } catch {
+          // Ignore audit failures during error handling
+        }
+        process.stderr.write(`Error: ${err instanceof Error ? err.message : err}\n`);
+        process.exit(exitCode);
+      }
     });
   apcliGroup.addCommand(execCmd);
 }
@@ -322,9 +361,26 @@ export function registerValidateCommand(
         process.exit(EXIT_CODES.MODULE_EXECUTE_ERROR);
       }
 
-      const preflight = await executor.validate(moduleId, merged);
-      formatPreflightResult(preflight, opts.format);
-      process.exit(preflight.valid ? 0 : firstFailedExitCode(preflight));
+      // Mirror buildModuleCommand's dry-run path: no approval gate (preflight
+      // does not execute), but audit-log exceptions so scripted callers
+      // always produce a trail even on failed validation (main.ts:1151-1159).
+      try {
+        const preflight = await executor.validate(moduleId, merged);
+        formatPreflightResult(preflight, opts.format);
+        process.exit(preflight.valid ? 0 : firstFailedExitCode(preflight));
+      } catch (err: unknown) {
+        const exitCode = exitCodeForError(err);
+        try {
+          const auditLogger = getAuditLogger();
+          if (auditLogger) {
+            auditLogger.logExecution(moduleId, merged, "error", exitCode, 0);
+          }
+        } catch {
+          // Ignore audit failures during error handling
+        }
+        process.stderr.write(`Error: ${err instanceof Error ? err.message : err}\n`);
+        process.exit(exitCode);
+      }
     });
   cli.addCommand(validateCmd);
 }
