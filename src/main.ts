@@ -16,15 +16,28 @@ import { resolveRefs } from "./ref-resolver.js";
 import { schemaToCliOptions } from "./schema-parser.js";
 import { checkApproval } from "./approval.js";
 import { formatExecResult, formatPreflightResult, firstFailedExitCode, resolveFormat } from "./output.js";
-import { setLogLevel } from "./logger.js";
+import { setLogLevel, warn as logWarn } from "./logger.js";
 import { registerInitCommand } from "./init-cmd.js";
 import { getDisplay } from "./display-helpers.js";
-import { registerConfigNamespace } from "./config.js";
-import { configureManHelp } from "./shell.js";
-import { registerValidateCommand } from "./discovery.js";
-import { registerSystemCommands } from "./system-cmd.js";
+import { ConfigResolver, registerConfigNamespace } from "./config.js";
+import { configureManHelp, registerCompletionCommand } from "./shell.js";
+import {
+  registerDescribeCommand,
+  registerExecCommand,
+  registerListCommand,
+  registerValidateCommand,
+} from "./discovery.js";
+import {
+  registerConfigCommand,
+  registerDisableCommand,
+  registerEnableCommand,
+  registerHealthCommand,
+  registerReloadCommand,
+  registerUsageCommand,
+} from "./system-cmd.js";
 import { registerPipelineCommand } from "./strategy.js";
-import { BUILTIN_COMMANDS } from "./cli.js";
+import { ApcliGroup, RESERVED_GROUP_NAMES } from "./builtin-group.js";
+import type { ApcliConfig } from "./builtin-group.js";
 import { ExposureFilter } from "./exposure.js";
 import { AuditLogger, setAuditLogger } from "./security/audit.js";
 import type { Executor, ModuleDescriptor, Registry } from "./cli.js";
@@ -214,6 +227,18 @@ export interface CreateCliOptions {
   commandsDir?: string;
   /** Path to binding.yaml for display overlay (apcore-toolkit DisplayResolver). */
   bindingPath?: string;
+  /**
+   * Built-in apcli group configuration (FE-13).
+   *
+   * Accepts:
+   *  - `true` / `false` (shorthand for `{mode: "all"}` / `{mode: "none"}`)
+   *  - A config object (see {@link ApcliConfig})
+   *  - A pre-built {@link ApcliGroup} instance (Tier 1 override)
+   *
+   * When absent, Tier 3 (apcore.yaml `apcli:` block) is consulted, falling
+   * back to auto-detect: standalone → visible, embedded → hidden.
+   */
+  apcli?: ApcliConfig | ApcliGroup;
 }
 
 /**
@@ -235,6 +260,7 @@ export function createCli(
   let extraCommands: Command[] | undefined;
   let app: APCore | undefined;
   let expose: Record<string, unknown> | import("./exposure.js").ExposureFilter | undefined;
+  let apcliOption: ApcliConfig | ApcliGroup | undefined;
   if (typeof extensionsDirOrOpts === "object" && extensionsDirOrOpts !== null) {
     extensionsDir = extensionsDirOrOpts.extensionsDir;
     progName = extensionsDirOrOpts.progName ?? progName;
@@ -244,6 +270,7 @@ export function createCli(
     executor = extensionsDirOrOpts.executor;
     extraCommands = extensionsDirOrOpts.extraCommands;
     expose = extensionsDirOrOpts.expose;
+    apcliOption = extensionsDirOrOpts.apcli;
   } else {
     extensionsDir = extensionsDirOrOpts;
   }
@@ -268,19 +295,10 @@ export function createCli(
   const cliLogLevel = process.env.APCORE_CLI_LOGGING_LEVEL ?? process.env.APCORE_LOGGING_LEVEL ?? "WARNING";
   setLogLevel(cliLogLevel);
 
-  const program = new Command(resolvedProgName)
-    .exitOverride()
-    .version(VERSION, "--version", `Show ${resolvedProgName} version`)
-    .description("apcore CLI — execute apcore modules from the command line")
-    .option("--extensions-dir <path>", "Path to extensions directory")
-    .option("--commands-dir <path>", "Path to convention-based commands directory")
-    .option("--binding <path>", "Path to binding.yaml for display overlay")
-    .option("--log-level <level>", "Logging level (DEBUG|INFO|WARNING|ERROR)", "WARNING")
-    .option("--verbose", "Show all options in help output (including built-in apcore options)");
-
   // Validate parameter combination: app is mutually exclusive with registry/executor.
   if (app && (registry || executor)) {
-    throw new Error("app is mutually exclusive with registry/executor");
+    process.stderr.write("Error: app is mutually exclusive with registry/executor\n");
+    process.exit(EXIT_CODES.INVALID_CLI_INPUT);
   }
 
   // Extract registry/executor from APCore unified client when provided.
@@ -291,25 +309,58 @@ export function createCli(
 
   // Validate parameter combination: executor without registry is invalid.
   if (executor && !registry) {
-    throw new Error("executor requires registry — pass both or neither");
+    process.stderr.write("Error: executor requires registry — pass both or neither\n");
+    process.exit(EXIT_CODES.INVALID_CLI_INPUT);
   }
 
-  // Registry/executor wiring: use pre-populated instances if provided,
-  // otherwise fall back to extensions-dir discovery (requires apcore-js).
+  const registryInjected = registry !== undefined;
+
+  const program = new Command(resolvedProgName)
+    .exitOverride()
+    .version(VERSION, "--version", `Show ${resolvedProgName} version`)
+    .description("apcore CLI — execute apcore modules from the command line")
+    .option("--log-level <level>", "Logging level (DEBUG|INFO|WARNING|ERROR)", "WARNING")
+    .option("--verbose", "Show all options in help output (including built-in apcore options)");
+
+  // Discovery flags are standalone-only (FE-13 T-APCLI-27/28).
+  if (!registryInjected) {
+    program.option("--extensions-dir <path>", "Path to extensions directory");
+    program.option("--commands-dir <path>", "Path to convention-based commands directory");
+    program.option("--binding <path>", "Path to binding.yaml for display overlay");
+  }
+
+  // Build ApcliGroup via 3-source dispatch (FE-13 §4.8):
+  //   1) Pre-built ApcliGroup instance (pass-through)
+  //   2) CliConfig boolean/object (Tier 1, fromCliConfig)
+  //   3) Tier 3 yaml via ConfigResolver.resolveObject (fromYaml)
+  let apcliCfg: ApcliGroup;
+  if (apcliOption instanceof ApcliGroup) {
+    apcliCfg = apcliOption;
+  } else if (apcliOption !== undefined) {
+    apcliCfg = ApcliGroup.fromCliConfig(apcliOption, { registryInjected });
+  } else {
+    let yamlVal: unknown = null;
+    try {
+      const resolver = new ConfigResolver();
+      yamlVal = resolver.resolveObject("apcli");
+    } catch {
+      yamlVal = null;
+    }
+    apcliCfg = ApcliGroup.fromYaml(yamlVal, { registryInjected });
+  }
+
+  // Construct the apcli sub-group. Hidden when visibility resolves to "none".
+  // Use Commander v12's public CommandOptions.hidden rather than reaching into
+  // the private _hidden field — this survives minor Commander bumps.
+  const apcliGroup = program
+    .command("apcli", { hidden: !apcliCfg.isGroupVisible() })
+    .description("apcore-cli built-in commands");
+
+  // Dispatch the 13-entry subcommand registrar table (FE-13 §4.9).
   if (registry) {
-    // Pre-populated registry provided — skip filesystem discovery.
     (program as unknown as Record<string, unknown>)._registry = registry;
     if (executor) {
       (program as unknown as Record<string, unknown>)._executor = executor;
-
-      // Register validate command (F1)
-      registerValidateCommand(program, registry, executor);
-
-      // Register system commands (F2) — async but fire-and-forget during setup
-      void registerSystemCommands(program, executor);
-
-      // Register describe-pipeline command (F8)
-      registerPipelineCommand(program, executor);
     }
   } else {
     const resolvedExtDir = extensionsDir
@@ -318,14 +369,30 @@ export function createCli(
     void resolvedExtDir; // Will be used when apcore-js registry is wired
   }
 
-  // Build exposure filter (FE-12)
+  _registerApcliSubcommands(apcliGroup, apcliCfg, registry, executor);
+
+  // FE-13 §11.2: standalone-mode deprecation shims for the 13 former
+  // root-level commands. No-op in embedded mode so branded CLIs never surface
+  // apcore-cli deprecation warnings to their end users.
+  _registerDeprecationShims(program, apcliGroup, registryInjected, resolvedProgName);
+
+  // Build exposure filter (FE-12). fromConfig throws on malformed shape
+  // (e.g. { mode: "bogus" }) — catch and exit with INVALID_CLI_INPUT so
+  // the caller sees a friendly message and the documented exit code, matching
+  // ApcliGroup._build's contract (review fix #1).
   let exposureFilter: ExposureFilter;
-  if (expose instanceof ExposureFilter) {
-    exposureFilter = expose;
-  } else if (typeof expose === "object" && expose !== null) {
-    exposureFilter = ExposureFilter.fromConfig({ expose });
-  } else {
-    exposureFilter = new ExposureFilter();
+  try {
+    if (expose instanceof ExposureFilter) {
+      exposureFilter = expose;
+    } else if (typeof expose === "object" && expose !== null) {
+      exposureFilter = ExposureFilter.fromConfig({ expose });
+    } else {
+      exposureFilter = new ExposureFilter();
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`Error: invalid 'expose' option — ${msg}\n`);
+    process.exit(EXIT_CODES.INVALID_CLI_INPUT);
   }
   (program as unknown as Record<string, unknown>)._exposureFilter = exposureFilter;
 
@@ -336,28 +403,47 @@ export function createCli(
     "Use --help --man to display a formatted man page.",
   ].join("\n"));
 
-  // Register init command for scaffolding
-  registerInitCommand(program);
-
-  // Register --help --man support
+  // Register --help --man support (stays at root — spec §4.1).
   configureManHelp(program, resolvedProgName, VERSION);
 
-  // Register extra commands (F11) — validate no name collisions with builtins
+  // Register extra commands (F11) — validate no name collisions with live
+  // Commander tree (root + apcli group subcommands). FE-13 moved the old
+  // per-command constant into a live-tree walk; collision detection now
+  // reads the actual program shape. Reserved-name (`apcli`) and
+  // live-collision cases are hard exit 2 (FE-13 §4.10 / §7 FR-13-09).
   if (extraCommands && extraCommands.length > 0) {
-    const existingNames = new Set([
-      ...BUILTIN_COMMANDS,
-      ...program.commands.map((c) => c.name()),
-    ]);
     for (const cmd of extraCommands) {
       const cmdName = cmd.name();
-      if (existingNames.has(cmdName)) {
+      if (RESERVED_GROUP_NAMES.has(cmdName)) {
         process.stderr.write(
-          `Warning: Extra command '${cmdName}' collides with a built-in command and will be skipped.\n`,
+          `Error: extraCommands name '${cmdName}' is reserved\n`,
         );
-        continue;
+        process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+      }
+      const existing = program.commands.find((c) => c.name() === cmdName);
+      if (existing) {
+        // Deprecation shims are auto-registered in standalone mode and should
+        // yield to user-supplied extraCommands with the same name — they're
+        // transitional scaffolding, not a real collision. Non-shim collisions
+        // are still hard-rejected.
+        const isShim =
+          (existing as unknown as { __isDeprecationShim?: boolean }).__isDeprecationShim === true;
+        if (isShim) {
+          logWarn(
+            `extraCommands '${cmdName}' overrides the deprecation shim for the same name. ` +
+              `The shim will be removed.`,
+          );
+          const cmds = program.commands as unknown as Command[];
+          const idx = cmds.indexOf(existing);
+          if (idx >= 0) cmds.splice(idx, 1);
+        } else {
+          process.stderr.write(
+            `Error: extraCommands name '${cmdName}' collides with an existing command\n`,
+          );
+          process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+        }
       }
       program.addCommand(cmd);
-      existingNames.add(cmdName);
     }
   }
 
@@ -371,6 +457,199 @@ export function createCli(
   });
 
   return program;
+}
+
+// ---------------------------------------------------------------------------
+// FE-13 apcli subcommand dispatcher (§4.9)
+// ---------------------------------------------------------------------------
+
+/**
+ * Subcommand names that are registered regardless of the resolved visibility
+ * mode's include/exclude filter. `exec` is the documented always-registered
+ * escape hatch (spec §4.9) so that downstream callers can always invoke modules
+ * by ID even when the apcli group is configured with a minimal surface.
+ */
+const _ALWAYS_REGISTERED: ReadonlySet<string> = new Set<string>(["exec"]);
+
+interface _RegistrarEntry {
+  name: string;
+  requiresExecutor: boolean;
+  register: (
+    apcliGroup: Command,
+    registry: Registry | undefined,
+    executor: Executor | undefined,
+  ) => void;
+}
+
+/**
+ * Central dispatcher for the 13 canonical apcli subcommands. Called once per
+ * createCli invocation after the apcli Commander group is built. Honors
+ * {@link ApcliGroup.resolveVisibility} for include/exclude modes, and skips
+ * entries whose `requiresExecutor: true` flag is not satisfied.
+ */
+function _registerApcliSubcommands(
+  apcliGroup: Command,
+  apcliCfg: ApcliGroup,
+  registry: Registry | undefined,
+  executor: Executor | undefined,
+): void {
+  // Standalone-mode fallback registry. Previously returned an empty list +
+  // null; that silently masked the "no registry wired" contract gap — users
+  // saw empty `apcli list` output with no clue the CLI was unwired. The
+  // erroring fallback below surfaces the gap with a clear message + exit code
+  // whenever list/describe actions actually reach into registry methods.
+  const emitUnwiredError = (): never => {
+    process.stderr.write(
+      "Error: no apcore-js registry wired. In standalone mode, pass " +
+        "--extensions-dir <path> to enable module discovery.\n",
+    );
+    process.exit(EXIT_CODES.CONFIG_INVALID);
+  };
+  const effectiveRegistry: Registry = registry ?? {
+    listModules: () => emitUnwiredError(),
+    getModule: () => emitUnwiredError(),
+  };
+
+  const TABLE: _RegistrarEntry[] = [
+    { name: "list",              requiresExecutor: false, register: (g) => registerListCommand(g, effectiveRegistry) },
+    { name: "describe",          requiresExecutor: false, register: (g) => registerDescribeCommand(g, effectiveRegistry) },
+    { name: "exec",              requiresExecutor: true,  register: (g, _r, ex) => registerExecCommand(g, effectiveRegistry, ex!) },
+    { name: "validate",          requiresExecutor: true,  register: (g, _r, ex) => registerValidateCommand(g, effectiveRegistry, ex!) },
+    { name: "init",              requiresExecutor: false, register: (g) => registerInitCommand(g) },
+    { name: "health",            requiresExecutor: true,  register: (g, _r, ex) => registerHealthCommand(g, ex!) },
+    { name: "usage",             requiresExecutor: true,  register: (g, _r, ex) => registerUsageCommand(g, ex!) },
+    { name: "enable",            requiresExecutor: true,  register: (g, _r, ex) => registerEnableCommand(g, ex!) },
+    { name: "disable",           requiresExecutor: true,  register: (g, _r, ex) => registerDisableCommand(g, ex!) },
+    { name: "reload",            requiresExecutor: true,  register: (g, _r, ex) => registerReloadCommand(g, ex!) },
+    { name: "config",            requiresExecutor: true,  register: (g, _r, ex) => registerConfigCommand(g, ex!) },
+    { name: "completion",        requiresExecutor: false, register: (g) => registerCompletionCommand(g) },
+    { name: "describe-pipeline", requiresExecutor: true,  register: (g, _r, ex) => registerPipelineCommand(g, ex!) },
+  ];
+
+  const mode = apcliCfg.resolveVisibility();
+  for (const entry of TABLE) {
+    // Determine whether this entry would be registered BEFORE short-circuiting
+    // on missing executor — otherwise _ALWAYS_REGISTERED never gets consulted
+    // for executor-required entries (e.g. "exec"), which violates spec §4.9.
+    let shouldRegister: boolean;
+    if (mode === "all" || mode === "none") {
+      // mode:"none" still registers all subcommands — the group itself is
+      // hidden, but subcommands remain individually reachable (spec §4.6).
+      shouldRegister = true;
+    } else {
+      shouldRegister =
+        _ALWAYS_REGISTERED.has(entry.name) || apcliCfg.isSubcommandIncluded(entry.name);
+    }
+    if (!shouldRegister) continue;
+
+    // Executor-required entry but no executor wired. Silent skip for ordinary
+    // entries — loud WARN for _ALWAYS_REGISTERED entries since the spec §4.9
+    // contract says they are always registered, and silently dropping them
+    // would mask a legitimate wiring gap for the caller.
+    if (entry.requiresExecutor && !executor) {
+      if (_ALWAYS_REGISTERED.has(entry.name)) {
+        logWarn(
+          `apcli.${entry.name} is in _ALWAYS_REGISTERED but no executor is wired — ` +
+            `subcommand unavailable. Pass executor to createCli() or avoid ${entry.name} invocations.`,
+        );
+      }
+      continue;
+    }
+
+    entry.register(apcliGroup, registry, executor);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FE-13 §11.2 deprecation shims (standalone-mode only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical list of root-level command names that were "flat" in pre-v0.7 and
+ * moved under the `apcli` group in v0.7. A thin shim at the root forwards
+ * invocations to the corresponding `apcli <name>` subcommand after printing a
+ * deprecation warning. Removed in v0.8 per spec §11.3.
+ */
+const _DEPRECATED_ROOT_COMMANDS: readonly string[] = [
+  "list",
+  "describe",
+  "exec",
+  "init",
+  "validate",
+  "health",
+  "usage",
+  "enable",
+  "disable",
+  "reload",
+  "config",
+  "completion",
+  "describe-pipeline",
+] as const;
+
+/**
+ * Register thin root-level deprecation shims for the 13 former built-in
+ * commands. Each shim writes the spec §11.2 warning to stderr then forwards
+ * to the matching `apcli <name>` subcommand, preserving positional args +
+ * options via a direct `parseAsync` on the apcli subcommand.
+ *
+ * No-op in embedded mode (`registryInjected === true`) so integrators' end
+ * users never see apcore-cli deprecation warnings for commands they were
+ * never meant to know about.
+ */
+function _registerDeprecationShims(
+  root: Command,
+  apcliGroup: Command,
+  registryInjected: boolean,
+  cliName: string,
+): void {
+  if (registryInjected) return;
+  for (const name of _DEPRECATED_ROOT_COMMANDS) {
+    const apcliSub = apcliGroup.commands.find((c) => c.name() === name);
+    if (!apcliSub) continue; // subcommand not registered (e.g. executor-required without executor)
+    if (root.commands.some((c) => c.name() === name)) continue; // collision guard
+
+    const shim = root
+      .command(name)
+      .description(`[DEPRECATED] Use '${cliName} apcli ${name}' instead.`)
+      .allowUnknownOption(true)
+      .allowExcessArguments(true)
+      .helpOption(false);
+    // Tag the shim so extraCommands collision detection can tell a shim apart
+    // from a user-registered command and drop the shim in favor of the user's
+    // extraCommand (with a WARN) rather than hard-failing with "collides".
+    (shim as unknown as Record<string, unknown>).__isDeprecationShim = true;
+    shim.action(async function (this: Command) {
+      process.stderr.write(
+        `WARNING: '${name}' as a root-level command is deprecated. ` +
+          `Use '${cliName} apcli ${name}' instead.\n` +
+          `         Will be removed in v0.8. ` +
+          `See: https://aiperceivable.github.io/apcore-cli/features/builtin-group/#11-migration\n`,
+      );
+      // Forward: reconstruct the tail from this shim's parsed args + the raw
+      // passthrough args Commander stashes when allowUnknownOption is on.
+      // This works for both real process.argv invocations and test-time
+      // `parseAsync([...], { from: "user" })` calls.
+      const tail = _collectShimForwardArgs(this);
+      await apcliSub.parseAsync(tail, { from: "user" });
+    });
+  }
+}
+
+/**
+ * Collect the argv tail to forward from a shim to its apcli counterpart.
+ * Uses Commander's own `.args` (positional + unknown flags that were left
+ * intact because the shim has `allowUnknownOption(true)`). Falls back to
+ * slicing `process.argv` from the shim name onward when `.args` is empty —
+ * this preserves nested sub-subcommand paths such as `config get foo` in
+ * real invocations where the shell supplied full argv.
+ */
+function _collectShimForwardArgs(shim: Command): string[] {
+  const shimArgs = (shim.args ?? []).slice();
+  if (shimArgs.length > 0) return shimArgs;
+  const shimName = shim.name();
+  const idx = process.argv.indexOf(shimName);
+  if (idx < 0) return [];
+  return process.argv.slice(idx + 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +700,7 @@ export async function applyToolkitIntegration(
     const toolkitModule = "apcore-toolkit";
     toolkit = await import(/* @vite-ignore */ toolkitModule) as Record<string, unknown>;
   } catch {
-    console.warn("apcore-toolkit not installed — toolkit features unavailable");
+    logWarn("apcore-toolkit not installed — toolkit features unavailable");
     return;
   }
 
@@ -429,7 +708,7 @@ export async function applyToolkitIntegration(
   // pydantic-specific and does not port cleanly). See the upstream
   // apcore-toolkit README for the tri-language parity note.
   if (commandsDir) {
-    console.warn("Convention scanning not available in the TypeScript toolkit");
+    logWarn("Convention scanning not available in the TypeScript toolkit");
   }
 
   if (bindingPath) {
@@ -437,7 +716,7 @@ export async function applyToolkitIntegration(
       await loadBindingDisplayOverlay(toolkit, bindingPath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`apcore-toolkit: failed to load binding '${bindingPath}': ${msg}`);
+      logWarn(`apcore-toolkit: failed to load binding '${bindingPath}': ${msg}`);
     }
   }
 }
@@ -678,7 +957,7 @@ export function buildModuleCommand(
       if (dryRun) {
         if (!executor.validate) {
           process.stderr.write("Error: Executor does not support validate.\n");
-          process.exit(1);
+          process.exit(EXIT_CODES.MODULE_EXECUTE_ERROR);
         }
         const preflight = await executor.validate(moduleId, merged);
         formatPreflightResult(preflight, outputFormat);

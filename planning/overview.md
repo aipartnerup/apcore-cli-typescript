@@ -37,18 +37,20 @@ apcore-cli (the adapter)
 apcore-js Registry + Executor (your modules, unchanged)
 ```
 
-## Features (8 total)
+## Features (10 total)
 
-| # | Feature | ID | Priority | Files | Depends On |
-|---|---------|-----|----------|-------|------------|
-| 1 | Config Resolver | FE-07 | P0 | `config.ts` | — |
-| 2 | Core Dispatcher | FE-01 | P0 | `main.ts`, `cli.ts` | FE-07, FE-02, FE-03, FE-08 |
-| 3 | Schema Parser | FE-02 | P0 | `schema-parser.ts`, `ref-resolver.ts` | — |
-| 4 | Output Formatter | FE-08 | P1 | `output.ts` | — |
-| 5 | Discovery | FE-04 | P1 | `discovery.ts` | FE-08 |
-| 6 | Approval Gate | FE-03 | P1 | `approval.ts`, `errors.ts` | — |
-| 7 | Security Manager | FE-05 | P1-P2 | `security/*.ts`, `errors.ts` | FE-07 |
-| 8 | Shell Integration | FE-06 | P2 | `shell.ts` | — |
+| # | Feature | ID | Priority | Status | Files | Depends On |
+|---|---------|-----|----------|--------|-------|------------|
+| 1 | Config Resolver | FE-07 | P0 | completed | `config.ts` | — |
+| 2 | Core Dispatcher | FE-01 | P0 | completed | `main.ts`, `cli.ts` | FE-07, FE-02, FE-03, FE-08 |
+| 3 | Schema Parser | FE-02 | P0 | completed | `schema-parser.ts`, `ref-resolver.ts` | — |
+| 4 | Output Formatter | FE-08 | P1 | completed | `output.ts` | — |
+| 5 | Discovery | FE-04 | P1 | completed | `discovery.ts` | FE-08 |
+| 6 | Approval Gate | FE-03 | P1 | completed | `approval.ts`, `errors.ts` | — |
+| 7 | Security Manager | FE-05 | P1-P2 | completed | `security/*.ts`, `errors.ts` | FE-07 |
+| 8 | Shell Integration | FE-06 | P2 | completed | `shell.ts` | — |
+| 9 | Exposure Filtering | FE-12 | P1 | completed | `exposure.ts`, `cli.ts`, `main.ts`, `config.ts`, `discovery.ts`, `output.ts` | FE-01, FE-04, FE-07 |
+| 10 | [Built-in Command Group (apcli)](./builtin-group/) | FE-13 | P0 | completed | `builtin-group.ts` (new) + `cli.ts`, `main.ts`, `config.ts`, `discovery.ts`, `system-cmd.ts`, `shell.ts`, `strategy.ts`, `init-cmd.ts`, `index.ts` | FE-01, FE-04, FE-07, FE-09, FE-11, FE-12 |
 
 ## Implementation Order
 
@@ -66,6 +68,10 @@ Phase 2 (Core):
 Phase 3 (Security & Shell):
   FE-05 Security Manager ── depends on FE-07
   FE-06 Shell Integration ── standalone
+
+Phase 4 (Surface refinement — v0.6+):
+  FE-12 Exposure Filtering ── completed (0.6.0)
+  FE-13 Built-in Command Group (apcli) ── completed (breaking change, v0.7.0)
 ```
 
 ## TypeScript-Specific Adaptations

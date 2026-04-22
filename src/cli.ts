@@ -12,6 +12,8 @@ import { buildModuleCommand } from "./main.js";
 import { getDisplay } from "./display-helpers.js";
 import { ExposureFilter } from "./exposure.js";
 import { warn } from "./logger.js";
+import { RESERVED_GROUP_NAMES } from "./builtin-group.js";
+import { EXIT_CODES } from "./errors.js";
 
 // TODO: Import Registry and Executor from apcore-js once available
 // import type { Registry, Executor, ModuleDescriptor } from "apcore-js";
@@ -109,23 +111,41 @@ export interface ModuleDescriptor {
   metadata?: Record<string, unknown>;
 }
 
-/** Built-in command names that cannot be overridden by modules. */
-export const BUILTIN_COMMANDS = [
-  "completion",
-  "config",
-  "describe",
-  "describe-pipeline",
-  "disable",
-  "enable",
-  "exec",
-  "health",
-  "init",
-  "list",
-  "man",
-  "reload",
-  "usage",
-  "validate",
-];
+// FE-13 (builtin-group) replaced the per-command collision constant with a
+// live Commander tree walk (root + apcli subgroup). The reserved top-level
+// group name is `apcli` (see RESERVED_GROUP_NAMES in ./builtin-group.ts);
+// individual subcommand names are no longer a global namespace since they
+// live under the apcli/ prefix.
+
+/**
+ * Hard-fail with exit 2 when a module resolves to a reserved CLI name.
+ * FE-13 §4.10 enumerates three cases: explicit group, auto-group prefix,
+ * and top-level alias/id. Error messages identify both the module id and
+ * the offending name for debuggability.
+ */
+function assertNotReserved(
+  kind: "group" | "auto-group" | "top-level",
+  name: string,
+  moduleId: string,
+): void {
+  if (!RESERVED_GROUP_NAMES.has(name)) return;
+  let msg: string;
+  if (kind === "group") {
+    msg =
+      `Error: Module '${moduleId}': display.cli.group '${name}' is reserved. ` +
+      `Use a different CLI alias or set display.cli.group to another value.\n`;
+  } else if (kind === "auto-group") {
+    msg =
+      `Error: Module '${moduleId}': auto-group '${name}' is reserved. ` +
+      `Rename the module id or set display.cli.group to another value.\n`;
+  } else {
+    msg =
+      `Error: Module '${moduleId}': top-level CLI name '${name}' is reserved. ` +
+      `Use a different CLI alias.\n`;
+  }
+  process.stderr.write(msg);
+  process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+}
 
 // ---------------------------------------------------------------------------
 // LazyModuleGroup
@@ -351,61 +371,76 @@ export class GroupedModuleGroup extends LazyModuleGroup {
 
   /**
    * Build the group map from registry modules.
+   *
+   * FE-13: hard-fails with exit 2 when a module resolves to the reserved
+   * `apcli` namespace in any of three ways — explicit `display.cli.group`,
+   * auto-grouped dotted prefix, or top-level alias/id. See spec §4.10.
    */
   buildGroupMap(): void {
     if (this.groupMapBuilt) {
       return;
     }
-    try {
-      this.buildAliasMap();
-      for (const descriptor of this.registry.listModules()) {
-        const moduleId = descriptor.id;
-        const cached = this.descriptorCache.get(moduleId);
-        if (!cached) {
-          continue;
-        }
-        if (!this.exposureFilter.isExposed(moduleId)) {
-          continue;
-        }
-        const [group, cmd] = GroupedModuleGroup.resolveGroup(moduleId, cached);
-        if (group === null) {
-          this.topLevelModules.set(cmd, [moduleId, cached]);
-        } else if (!/^[a-z][a-z0-9_-]*$/.test(group)) {
-          warn(
-            `Module '${moduleId}': group name '${group}' is not shell-safe — treating as top-level.`,
-          );
-          this.topLevelModules.set(cmd, [moduleId, cached]);
-        } else {
-          if (!this.groupMap.has(group)) {
-            this.groupMap.set(group, new Map());
-          }
-          this.groupMap.get(group)!.set(cmd, [moduleId, cached]);
-        }
+    this.buildAliasMap();
+    for (const descriptor of this.registry.listModules()) {
+      const moduleId = descriptor.id;
+      const cached = this.descriptorCache.get(moduleId);
+      if (!cached) {
+        continue;
       }
-      // Warn on builtin collisions
-      for (const groupName of this.groupMap.keys()) {
-        if (BUILTIN_COMMANDS.includes(groupName)) {
-          warn(
-            `Group name '${groupName}' collides with a built-in command and will be ignored`,
-          );
-        }
+      if (!this.exposureFilter.isExposed(moduleId)) {
+        continue;
       }
-      this.groupMapBuilt = true;
-    } catch {
-      warn("Failed to build group map");
+
+      // Detect reserved-name collisions BEFORE routing — spec §4.10 three
+      // cases: explicit group, auto-group prefix, top-level name.
+      const display = getDisplay(cached);
+      const cliDisplay = (display.cli && typeof display.cli === "object" && !Array.isArray(display.cli))
+        ? (display.cli as Record<string, unknown>)
+        : {};
+      const explicitGroup = typeof cliDisplay.group === "string" && cliDisplay.group !== ""
+        ? (cliDisplay.group as string)
+        : undefined;
+      if (explicitGroup !== undefined) {
+        assertNotReserved("group", explicitGroup, moduleId);
+      }
+
+      const [group, cmd] = GroupedModuleGroup.resolveGroup(moduleId, cached);
+      if (group !== null && explicitGroup === undefined) {
+        // Auto-grouped (e.g. `apcli.foo` → group=`apcli`).
+        assertNotReserved("auto-group", group, moduleId);
+      }
+      if (group === null) {
+        assertNotReserved("top-level", cmd, moduleId);
+        this.topLevelModules.set(cmd, [moduleId, cached]);
+      } else if (!/^[a-z][a-z0-9_-]*$/.test(group)) {
+        warn(
+          `Module '${moduleId}': group name '${group}' is not shell-safe — treating as top-level.`,
+        );
+        this.topLevelModules.set(cmd, [moduleId, cached]);
+      } else {
+        if (!this.groupMap.has(group)) {
+          this.groupMap.set(group, new Map());
+        }
+        this.groupMap.get(group)!.set(cmd, [moduleId, cached]);
+      }
     }
+    this.groupMapBuilt = true;
   }
 
   /**
-   * List all available command names: builtins + group names + top-level module names.
+   * List all available command names: group names + top-level module names.
+   *
+   * FE-13: the built-in subcommand list is no longer folded in here — those
+   * commands live under the `apcli` prefix and are registered directly by
+   * `createCli`.
    */
   override listCommands(): string[] {
     this.buildGroupMap();
     const groupNames = [...this.groupMap.keys()].filter(
-      (g) => !BUILTIN_COMMANDS.includes(g),
+      (g) => !RESERVED_GROUP_NAMES.has(g),
     );
     const topNames = [...this.topLevelModules.keys()];
-    return [...new Set([...BUILTIN_COMMANDS, ...groupNames, ...topNames])].sort();
+    return [...new Set([...groupNames, ...topNames])].sort();
   }
 
   /**

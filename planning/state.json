@@ -122,6 +122,42 @@
       "depends_on": ["FE-01", "FE-04", "FE-07"],
       "tasks_total": 8,
       "tasks_completed": 8
+    },
+    {
+      "id": "FE-13",
+      "name": "Built-in Command Group (apcli)",
+      "plan_file": "builtin-group/plan.md",
+      "status": "completed",
+      "priority": "P0",
+      "breaking_change": true,
+      "source_files": [
+        "src/builtin-group.ts",
+        "src/cli.ts",
+        "src/main.ts",
+        "src/config.ts",
+        "src/discovery.ts",
+        "src/system-cmd.ts",
+        "src/shell.ts",
+        "src/strategy.ts",
+        "src/init-cmd.ts",
+        "src/index.ts"
+      ],
+      "test_files": [
+        "tests/builtin-group.test.ts",
+        "tests/cli.test.ts",
+        "tests/main.test.ts",
+        "tests/discovery.test.ts",
+        "tests/system-cmd.test.ts",
+        "tests/shell.test.ts",
+        "tests/grouped-commands.test.ts",
+        "tests/config.test.ts",
+        "tests/conformance/apcli-visibility.test.ts"
+      ],
+      "depends_on": ["FE-01", "FE-04", "FE-07", "FE-09", "FE-11", "FE-12"],
+      "tasks_total": 10,
+      "tasks_completed": 10,
+      "completed_at": "2026-04-21T20:30:00Z",
+      "note": "Cross-language conformance (task 9) is partial — Python reference has not shipped FE-13; goldens are TS-self-consistent. Harmonize when upstream ships."
     }
   ]
 }

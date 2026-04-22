@@ -6,6 +6,7 @@
 
 import * as fs from "node:fs";
 import yaml from "js-yaml";
+import { warn as logWarn } from "./logger.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +37,37 @@ export const DEFAULTS: Record<string, unknown> = {
   "expose.mode": "all",
   "expose.include": [],
   "expose.exclude": [],
+  // Builtin group visibility (FE-13) — snake_case dot-notation.
+  // `apcli` root is null by default (object absent); sub-keys carry the
+  // per-field defaults consumed by the Tier 3 visibility resolver.
+  apcli: null,
+  "apcli.mode": null,
+  "apcli.include": [],
+  "apcli.exclude": [],
+  "apcli.disable_env": false,
+};
+
+/**
+ * Defaults published to the apcore-cli Config Bus namespace (apcore >= 0.15.0).
+ *
+ * Exported for testability. Mirrors the snake_case DEFAULTS entries, with
+ * `apcli` expressed as a nested object (matches the natural yaml shape).
+ */
+export const NAMESPACE_DEFAULTS: Record<string, unknown> = {
+  stdin_buffer_limit: 10_485_760,
+  auto_approve: false,
+  help_text_max_length: 1000,
+  logging_level: "WARNING",
+  approval_timeout: 60,
+  strategy: "standard",
+  group_depth: 1,
+  // FE-13 — builtin group visibility configuration
+  apcli: {
+    mode: null,
+    include: [] as string[],
+    exclude: [] as string[],
+    disable_env: false,
+  },
 };
 
 /** Namespace key ↔ legacy key mapping for backward compatibility. */
@@ -62,15 +94,7 @@ export function registerConfigNamespace(): void {
       Config.registerNamespace({
         name: "apcore-cli",
         envPrefix: "APCORE_CLI",
-        defaults: {
-          stdin_buffer_limit: 10_485_760,
-          auto_approve: false,
-          help_text_max_length: 1000,
-          logging_level: "WARNING",
-          approval_timeout: 60,
-          strategy: "standard",
-          group_depth: 1,
-        },
+        defaults: NAMESPACE_DEFAULTS,
       });
     }
   } catch {
@@ -94,6 +118,13 @@ export class ConfigResolver {
   private readonly configPath: string;
   private fileCache: Record<string, unknown> | null = null;
   private fileCacheLoaded = false;
+  /**
+   * Raw parsed yaml root (pre-flatten). Populated alongside `fileCache`
+   * on load. Used by `resolveObject()` to walk nested paths without
+   * invoking `flattenDict` — see FE-13 spec §4.8 M1 note.
+   * `null` when no config file is present or parsing fails.
+   */
+  private _rawConfig: Record<string, unknown> | null = null;
 
   constructor(cliFlags?: Record<string, unknown>, configPath?: string) {
     this.cliFlags = cliFlags ?? {};
@@ -153,6 +184,51 @@ export class ConfigResolver {
   }
 
   /**
+   * Resolve a configuration key to its raw nested value (FE-13).
+   *
+   * Unlike `resolve()`, this method does NOT flatten the yaml tree — it
+   * walks the dot-separated path directly against the parsed yaml root.
+   * This lets callers retrieve non-leaf structures (booleans, arrays,
+   * objects) such as the `apcli` visibility config, which is naturally
+   * shaped as a nested object in apcore.yaml.
+   *
+   * Semantics:
+   *   - Returns `null` when no config file is loaded or when the path is
+   *     not present / descends into a non-object node (including arrays).
+   *   - Returns the raw value (boolean / array / object / scalar) when the
+   *     full path resolves to a leaf or intermediate node.
+   *
+   * Intentionally DOES NOT consult DEFAULTS, env vars, or CLI flags — it is
+   * strictly a yaml-tree accessor. Scalar `resolve()` semantics are
+   * unaffected.
+   */
+  resolveObject(key: string): unknown {
+    // Ensure raw config is populated (lazy load parity with `resolve`).
+    if (!this.fileCacheLoaded) {
+      this.fileCache = this.loadConfigFile();
+      this.fileCacheLoaded = true;
+    }
+    if (this._rawConfig == null) {
+      return null;
+    }
+    const parts = key.split(".");
+    let cur: unknown = this._rawConfig;
+    for (const p of parts) {
+      if (
+        cur != null &&
+        typeof cur === "object" &&
+        !Array.isArray(cur) &&
+        p in (cur as Record<string, unknown>)
+      ) {
+        cur = (cur as Record<string, unknown>)[p];
+      } else {
+        return null;
+      }
+    }
+    return cur;
+  }
+
+  /**
    * Load and flatten a YAML config file.
    */
   private loadConfigFile(): Record<string, unknown> | null {
@@ -163,7 +239,7 @@ export class ConfigResolver {
       if (err instanceof Error && "code" in err && err.code === "ENOENT") {
         return null;
       }
-      console.warn(
+      logWarn(
         `Configuration file '${this.configPath}' is malformed, using defaults.`,
       );
       return null;
@@ -173,19 +249,21 @@ export class ConfigResolver {
     try {
       parsed = yaml.load(content);
     } catch {
-      console.warn(
+      logWarn(
         `Configuration file '${this.configPath}' is malformed, using defaults.`,
       );
       return null;
     }
 
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      console.warn(
+      logWarn(
         `Configuration file '${this.configPath}' is malformed, using defaults.`,
       );
       return null;
     }
 
+    // Record the pre-flatten root for resolveObject() (FE-13).
+    this._rawConfig = parsed as Record<string, unknown>;
     return this.flattenDict(parsed as Record<string, unknown>);
   }
 

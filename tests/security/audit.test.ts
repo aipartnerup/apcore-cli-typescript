@@ -58,10 +58,13 @@ describe("AuditLogger", () => {
   });
 
   it("handles write errors gracefully", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // Warnings now flow through ./logger.js (stderr) per review fix #4, not console.warn.
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const logger = new AuditLogger("/nonexistent/path/audit.jsonl");
     logger.logExecution("mod", {}, "error", 1, 0);
-    expect(warnSpy).toHaveBeenCalled();
+    const calls = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(calls).toMatch(/WARNING: Could not write audit log/);
+    stderrSpy.mockRestore();
   });
 
   it("uses default path based on home directory", () => {

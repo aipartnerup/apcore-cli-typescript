@@ -1,0 +1,230 @@
+{
+  "feature": "builtin-group",
+  "created": "2026-04-21T00:00:00Z",
+  "updated": "2026-04-21T20:30:00Z",
+  "status": "completed",
+  "execution_order": [
+    "apcli-group-class",
+    "config-resolve-object",
+    "discovery-split",
+    "system-cmd-split",
+    "shell-split-and-completion",
+    "create-cli-integration",
+    "reserved-name-enforcement",
+    "deprecation-shims",
+    "cross-language-conformance",
+    "docs-and-migration"
+  ],
+  "progress": {
+    "total_tasks": 10,
+    "completed": 10,
+    "in_progress": 0,
+    "pending": 0
+  },
+  "tasks": [
+    {
+      "id": "apcli-group-class",
+      "file": "tasks/apcli-group-class.md",
+      "title": "ApcliGroup class + ApcliConfig/ApcliMode types + RESERVED_GROUP_NAMES + APCORE_CLI_APCLI env parser",
+      "status": "completed",
+      "depends_on": [],
+      "estimated_time": "4h",
+      "started_at": "2026-04-21T19:44:00Z",
+      "completed_at": "2026-04-21T19:51:00Z",
+      "assignee": null,
+      "commits": []
+    },
+    {
+      "id": "config-resolve-object",
+      "file": "tasks/config-resolve-object.md",
+      "title": "ConfigResolver.resolveObject (non-leaf) + apcli.* DEFAULTS + registerConfigNamespace extension",
+      "status": "completed",
+      "depends_on": [],
+      "estimated_time": "2h",
+      "started_at": "2026-04-21T19:44:00Z",
+      "completed_at": "2026-04-21T19:51:00Z",
+      "assignee": null,
+      "commits": []
+    },
+    {
+      "id": "discovery-split",
+      "file": "tasks/discovery-split.md",
+      "title": "Split registerDiscoveryCommands into list/describe/exec registrars, attach to apcli group",
+      "status": "completed",
+      "depends_on": ["apcli-group-class"],
+      "estimated_time": "3h",
+      "started_at": "2026-04-21T19:54:00Z",
+      "completed_at": "2026-04-21T19:59:00Z",
+      "assignee": null,
+      "commits": []
+    },
+    {
+      "id": "system-cmd-split",
+      "file": "tasks/system-cmd-split.md",
+      "title": "Split registerSystemCommands into 6 per-subcommand registrars sharing a probe helper",
+      "status": "completed",
+      "depends_on": ["apcli-group-class"],
+      "estimated_time": "3h",
+      "started_at": "2026-04-21T19:54:00Z",
+      "completed_at": "2026-04-21T19:59:00Z",
+      "assignee": null,
+      "commits": [],
+      "notes": "registerConfigCommand kept (apcliGroup, executor) signature. Dispatcher table in task 6 set requiresExecutor=true for config."
+    },
+    {
+      "id": "shell-split-and-completion",
+      "file": "tasks/shell-split-and-completion.md",
+      "title": "Split registerCompletionCommand under apcli; rewrite bash/zsh/fish generators via Commander introspection",
+      "status": "completed",
+      "depends_on": ["apcli-group-class"],
+      "estimated_time": "4h",
+      "started_at": "2026-04-21T19:54:00Z",
+      "completed_at": "2026-04-21T20:00:00Z",
+      "assignee": null,
+      "commits": [],
+      "notes": "generateBashCompletion/Zsh/Fish exported; registerCompletionCommand(host) uses findRootProgram."
+    },
+    {
+      "id": "create-cli-integration",
+      "file": "tasks/create-cli-integration.md",
+      "title": "Wire ApcliGroup + _registerApcliSubcommands into createCli, gate discovery flags, drop BUILTIN_COMMANDS",
+      "status": "completed",
+      "depends_on": [
+        "apcli-group-class",
+        "config-resolve-object",
+        "discovery-split",
+        "system-cmd-split",
+        "shell-split-and-completion"
+      ],
+      "estimated_time": "5h",
+      "started_at": "2026-04-21T20:01:00Z",
+      "completed_at": "2026-04-21T20:13:00Z",
+      "assignee": null,
+      "commits": [],
+      "notes": "validate/exec/config/describe-pipeline all require executor (requiresExecutor=true). BUILTIN_COMMANDS + 3 monolithic registrar wrappers deleted."
+    },
+    {
+      "id": "reserved-name-enforcement",
+      "file": "tasks/reserved-name-enforcement.md",
+      "title": "Hard exit 2 on reserved 'apcli' at group/auto-group/top-level; migrate extraCommands check",
+      "status": "completed",
+      "depends_on": ["create-cli-integration"],
+      "estimated_time": "2h",
+      "started_at": "2026-04-21T20:14:00Z",
+      "completed_at": "2026-04-21T20:18:00Z",
+      "assignee": null,
+      "commits": []
+    },
+    {
+      "id": "deprecation-shims",
+      "file": "tasks/deprecation-shims.md",
+      "title": "Standalone-mode root-level deprecation shims forwarding to apcli subcommands",
+      "status": "completed",
+      "depends_on": ["create-cli-integration"],
+      "estimated_time": "2h",
+      "started_at": "2026-04-21T20:20:00Z",
+      "completed_at": "2026-04-21T20:24:00Z",
+      "assignee": null,
+      "commits": [],
+      "notes": "Forwarding via apcliSub.parseAsync(tail, {from: 'user'}); allowUnknownOption+allowExcessArguments to preserve args/opts. Only emits shims for apcli subcommands actually registered (skips executor-required ones when no executor)."
+    },
+    {
+      "id": "cross-language-conformance",
+      "file": "tasks/cross-language-conformance.md",
+      "title": "Conformance fixtures (T-APCLI-31) + startup benchmark within 5% (T-APCLI-32)",
+      "status": "completed",
+      "depends_on": ["create-cli-integration"],
+      "estimated_time": "3h",
+      "started_at": "2026-04-21T20:14:00Z",
+      "completed_at": "2026-04-21T20:19:00Z",
+      "assignee": null,
+      "commits": [],
+      "notes": "PARTIAL vs Python: no apcore_cli/builtin_group.py exists in sibling Python repo. Goldens are TS-self-consistent; TODO markers track harmonization when Python ships FE-13. Startup benchmark avg 0.252ms vs baseline 10ms (ratio 0.025, within budget)."
+    },
+    {
+      "id": "docs-and-migration",
+      "file": "tasks/docs-and-migration.md",
+      "title": "CHANGELOG v0.7.0 entry + README update + CLAUDE.md v0.7.0 Conventions + purge BUILTIN_COMMANDS refs",
+      "status": "completed",
+      "depends_on": [
+        "reserved-name-enforcement",
+        "deprecation-shims",
+        "cross-language-conformance"
+      ],
+      "estimated_time": "1h",
+      "started_at": "2026-04-21T20:26:00Z",
+      "completed_at": "2026-04-21T20:30:00Z",
+      "assignee": null,
+      "commits": [],
+      "notes": "BUILTIN_COMMANDS in src/+tests/ = 0; remaining 4 hits are CHANGELOG historical entries + v0.7.0 'Removed' entry (intentional)."
+    }
+  ],
+  "metadata": {
+    "source_doc": "../apcore-cli/docs/features/builtin-group.md",
+    "feature_id": "FE-13",
+    "priority": "P0",
+    "breaking_change": true,
+    "created_by": "code-forge",
+    "version": "1.0",
+    "test_results": {
+      "passed": 420,
+      "failed": 2,
+      "failed_tests_note": "2 pre-existing failures in tests/display-helpers.test.ts (binding overlay fallback) — unrelated to FE-13; present on clean HEAD before any FE-13 work."
+    },
+    "known_partials": [
+      "cross-language-conformance: Python reference has not yet shipped FE-13; goldens are TS-self-consistent. Harmonize when upstream Python ports FE-13.",
+      "review: cross-module aggregation agent (D5/D7/D10-D15) skipped due to API usage limit. Re-run /code-forge:review builtin-group after reset for full coverage."
+    ],
+    "fixes": [
+      {
+        "bug": "review fixes — 8 issues (1 critical + 7 warnings)",
+        "root_cause_level": 1,
+        "root_cause": "Code-level issues identified by /code-forge:review: yaml snake_case key drop (disable_env), _ALWAYS_REGISTERED check ordering, silent empty-registry fallback, raw-Error throws bypassing EXIT_CODES, extraCommands vs deprecation-shim collision UX, Commander _hidden private-field reach-in, missing WARN on unknown include/exclude entries, and misnamed config key in error messages.",
+        "fixed_files": [
+          "src/builtin-group.ts",
+          "src/main.ts",
+          "tests/builtin-group.test.ts",
+          "tests/main.test.ts"
+        ],
+        "regression_tests_added": 21,
+        "test_results_after": "441 passed, 2 pre-existing display-helpers failures (unrelated to FE-13)",
+        "commits": [],
+        "doc_updates": [],
+        "fixed_at": "2026-04-22T04:24:00Z"
+      }
+    ],
+    "review": {
+      "date": "2026-04-21T20:50:00Z",
+      "rating": "pass_with_notes",
+      "merge_readiness": "fix_required",
+      "fixes_applied_at": "2026-04-22T04:24:00Z",
+      "total_issues": 20,
+      "blockers": 0,
+      "criticals": 1,
+      "warnings": 7,
+      "suggestions": 12,
+      "health": {
+        "verdict": "healthy",
+        "finding_density": 0.55,
+        "critical_share": 0.05,
+        "auto_downgrade_share": 0.5,
+        "drop_share": 0.0,
+        "loc_reviewed": 3637,
+        "top_pre_downgrade": 2,
+        "top_post": 1,
+        "raw_findings_count": 20,
+        "auto_downgrades": {
+          "missing_evidence": 0,
+          "internal_trust_boundary": 0,
+          "design_preference": 1
+        },
+        "drops": {
+          "speculative_phrasing": 0,
+          "warning_no_observable_downside": 0,
+          "suggestion_no_concrete_benefit": 0
+        }
+      },
+      "top_finding": "src/builtin-group.ts:199 — disable_env from yaml silently ignored due to snake/camel key mismatch (breaks T-APCLI-14/15/37/41)"
+    }
+  }
+}

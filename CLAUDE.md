@@ -34,7 +34,7 @@
 ## v0.6.0 Conventions
 
 - Public surface (src/index.ts): user-facing symbols only. Internals (globMatch,
-  formatModuleList, mapType, extractHelp, truncate, BUILTIN_COMMANDS, LazyModuleGroup,
+  formatModuleList, mapType, extractHelp, truncate, LazyModuleGroup,
   applyToolkitIntegration, emitErrorJson/Tty, verboseHelp/docsUrl raw exports, per-level
   logger helpers) are no longer re-exported — import directly from their source modules.
 - ExposureFilter + `expose` option on CreateCliOptions (FE-12).
@@ -61,3 +61,21 @@
 - New env vars (v0.6.0): APCORE_CLI_APPROVAL_TIMEOUT, APCORE_CLI_STRATEGY,
   APCORE_CLI_GROUP_DEPTH.
 - New config keys (v0.6.0): cli.approval_timeout, cli.strategy, cli.group_depth.
+
+## v0.7.0 Conventions
+
+- Built-in commands live under the `apcli` sub-group. `RESERVED_GROUP_NAMES
+  = {"apcli"}` replaces the retired `BUILTIN_COMMANDS` collision surface
+  (src/builtin-group.ts).
+- `ApcliGroup` resolves visibility via a 4-tier chain:
+  CliConfig > APCORE_CLI_APCLI env > apcore.yaml > auto-detect
+  (registryInjected → "none", else "all").
+- Discovery flags (`--extensions-dir`, `--commands-dir`, `--binding`) are
+  gated on `!registryInjected`.
+- v0.7.x ships root-level deprecation shims that warn and forward to
+  `apcli <name>` in standalone mode only. Removed in v0.8.
+- New env var: `APCORE_CLI_APCLI` (show/hide/1/0/true/false).
+- New config keys: `cli.apcli.mode`, `cli.apcli.include`,
+  `cli.apcli.exclude`, `cli.apcli.disable_env`.
+- `ConfigResolver.resolveObject(key)` reads nested (non-flattened)
+  config values.

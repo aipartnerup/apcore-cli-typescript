@@ -5,18 +5,18 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-04-22
-
-- **Dependency bump**: requires `apcore-js >= 0.19.0` (was `>= 0.18.0`) and `apcore-toolkit >= 0.5.0` (was `>= 0.4.0`). Aligns with upstream releases `apcore-js 0.19.0` (dependency graph errors, async `buildStrategyFromConfig`, auto-schema adapter chain, `BindingSchemaMissingError` rename) and `apcore-toolkit 0.5.0` (`BindingLoader`, `ScannedModule.display`, `apcore-toolkit/browser` subpath).
-- **Placeholder types in `src/cli.ts` realigned with real apcore-js shapes.** `PipelineTrace` / `StepTrace` / `PreflightResult` / `StrategyStep` now use camelCase (`strategyName`, `totalDurationMs`, `durationMs`, `skipReason`, `requiresApproval`, `timeoutMs`) matching the apcore-js runtime object shape. `Executor.describePipeline` is typed as `(): StrategyInfo` (zero arguments — the previous `describePipeline?(strategyName?: string)` signature declared an argument that the real apcore-js method ignores). `Executor.strategy` renamed to `Executor.currentStrategy` to match the upstream getter.
-- **`--trace` output now reads the correct runtime fields.** `main.ts` previously read `trace.strategy_name` / `trace.total_duration_ms` / `s.duration_ms` / `s.skip_reason` (snake_case) from the camelCase `PipelineTrace` returned by apcore-js, so those values surfaced as `undefined` at runtime. Now reads `strategyName` / `totalDurationMs` / `durationMs` / `skipReason` correctly. JSON output keys remain snake_case to preserve the cross-language CLI output contract.
-- **`formatPreflightResult` now reads `result.requiresApproval`** (was `result.requires_approval`). The JSON output key remains `requires_approval`.
-- **Dependency bump**: requires `apcore-js >= 0.18.0` (was `>= 0.17.1`). Aligns with upstream breaking changes in `apcore-js 0.18.0` and `apcore-toolkit 0.4.2`.
-- **`MAX_MODULE_ID_LENGTH` 128 → 192**: `validateModuleId()` now enforces a 192-character limit for module IDs, up from 128, to accommodate Java/.NET deep-namespace FQN-derived IDs (PROTOCOL_SPEC §2.7 spec 1.6.0-draft).
-- **`Executor.describePipeline()` returns `StrategyInfo`**: `describe-pipeline` command in `strategy.ts` now calls `executor.describePipeline(strategyName)` and consumes the returned `StrategyInfo` object (`name`, `stepCount`, `stepNames`, `description`). Pipeline header format updated to `Pipeline: ${info.name} (${info.stepCount} steps)`. Step metadata (Pure/Removable/Timeout columns) sourced from `executor.strategy.steps` (`pure: boolean`, `removable: boolean`, `timeoutMs: number`). Falls back to static preset table when `describePipeline` is not available.
+## [0.7.0] - 2026-04-21
 
 ### Added
 
+- **FE-13: Built-in command group (`apcli`)** — consolidates the 13 canonical built-in commands (`list`, `describe`, `exec`, `validate`, `init`, `health`, `usage`, `enable`, `disable`, `reload`, `config`, `completion`, `describe-pipeline`) under a single `apcli` sub-group. Invocation shifts from `<cli> list` to `<cli> apcli list`.
+  - `ApcliGroup` class + `ApcliConfig` / `ApcliMode` types, exported from `src/index.ts`.
+  - `RESERVED_GROUP_NAMES = new Set(["apcli"])` as the enforced collision surface (replaces the retired per-command `BUILTIN_COMMANDS` constant).
+  - New env var `APCORE_CLI_APCLI` — accepts `show`, `hide`, `1`, `0`, `true`, `false` (case-insensitive).
+  - New config keys (snake_case DEFAULTS): `cli.apcli.mode`, `cli.apcli.include`, `cli.apcli.exclude`, `cli.apcli.disable_env`.
+  - `ConfigResolver.resolveObject(key)` — non-leaf accessor that returns object-shaped config values without flattening.
+  - `createCli({ apcli })` option — accepts `boolean | object | ApcliGroup` to configure the built-in group surface.
+  - See [migration guide](../apcore-cli/docs/features/builtin-group.md#11-migration) for the full v0.7 → v0.8 timeline.
 - **New error-code → exit-code mappings** in `src/errors.ts` and `src/main.ts`: `DEPENDENCY_NOT_FOUND` and `DEPENDENCY_VERSION_MISMATCH` both map to exit code 44. Preserves the pre-0.19.0 exit code (`MODULE_LOAD_ERROR` = 44) for missing / version-mismatched module dependencies, now that apcore-js surfaces these through dedicated error types per PROTOCOL_SPEC §5.15.2.
 - **Binding-overlay tests** in `tests/display-helpers.test.ts`: a tmp binding YAML is written, `applyToolkitIntegration` is called, and `getDisplay()` is verified to return the overlay for a descriptor that has no baked-in `metadata.display`.
 - **`createCli({ app })` — `APCore` unified client**: `CreateCliOptions` now accepts an `app?: APCore` field. When provided, `app.registry` and `app.executor` are extracted and used in place of explicit `registry`/`executor` fields. Passing `app` together with `registry` or `executor` throws `"app is mutually exclusive with registry/executor"`.
@@ -34,10 +34,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Hidden modules remain invocable via `exec <module_id>`.
 - New file: `exposure.ts`.
 
+### Changed
+
+- Built-in commands now live under the `apcli` sub-group. Pre-v0.7 invocations (`<cli> list`, `<cli> describe`, etc.) still work in **standalone mode** via deprecation shims that print a `WARNING` to stderr and forward to `apcli <name>`. Shims are not installed in embedded mode.
+- Discovery flags (`--extensions-dir`, `--commands-dir`, `--binding`) are now gated on standalone mode — they are only registered when no `registry` is injected.
+- Shell-completion generators (bash/zsh/fish) enumerate registered Commander subcommands dynamically; hardcoded command lists are gone.
+- **Dependency bump**: requires `apcore-js >= 0.19.0` (was `>= 0.18.0`) and `apcore-toolkit >= 0.5.0` (was `>= 0.4.0`). Aligns with upstream releases `apcore-js 0.19.0` (dependency graph errors, async `buildStrategyFromConfig`, auto-schema adapter chain, `BindingSchemaMissingError` rename) and `apcore-toolkit 0.5.0` (`BindingLoader`, `ScannedModule.display`, `apcore-toolkit/browser` subpath).
+- **Placeholder types in `src/cli.ts` realigned with real apcore-js shapes.** `PipelineTrace` / `StepTrace` / `PreflightResult` / `StrategyStep` now use camelCase (`strategyName`, `totalDurationMs`, `durationMs`, `skipReason`, `requiresApproval`, `timeoutMs`) matching the apcore-js runtime object shape. `Executor.describePipeline` is typed as `(): StrategyInfo` (zero arguments — the previous `describePipeline?(strategyName?: string)` signature declared an argument that the real apcore-js method ignores). `Executor.strategy` renamed to `Executor.currentStrategy` to match the upstream getter.
+- **`--trace` output now reads the correct runtime fields.** `main.ts` previously read `trace.strategy_name` / `trace.total_duration_ms` / `s.duration_ms` / `s.skip_reason` (snake_case) from the camelCase `PipelineTrace` returned by apcore-js, so those values surfaced as `undefined` at runtime. Now reads `strategyName` / `totalDurationMs` / `durationMs` / `skipReason` correctly. JSON output keys remain snake_case to preserve the cross-language CLI output contract.
+- **`formatPreflightResult` now reads `result.requiresApproval`** (was `result.requires_approval`). The JSON output key remains `requires_approval`.
+- **`MAX_MODULE_ID_LENGTH` 128 → 192**: `validateModuleId()` now enforces a 192-character limit for module IDs, up from 128, to accommodate Java/.NET deep-namespace FQN-derived IDs (PROTOCOL_SPEC §2.7 spec 1.6.0-draft).
+- **`Executor.describePipeline()` returns `StrategyInfo`**: `describe-pipeline` command in `strategy.ts` now calls `executor.describePipeline(strategyName)` and consumes the returned `StrategyInfo` object (`name`, `stepCount`, `stepNames`, `description`). Pipeline header format updated to `Pipeline: ${info.name} (${info.stepCount} steps)`. Step metadata (Pure/Removable/Timeout columns) sourced from `executor.strategy.steps` (`pure: boolean`, `removable: boolean`, `timeoutMs: number`). Falls back to static preset table when `describePipeline` is not available.
+
+### Deprecated
+
+- Root-level v0.6 built-in commands continue to work in standalone mode but emit a `WARNING` and forward to `apcli <name>`. **Scheduled for removal in v0.8.**
+
+### Removed
+
+- The per-command `BUILTIN_COMMANDS` constant and its re-export from `src/index.ts`. Replaced by `RESERVED_GROUP_NAMES`.
+- Monolithic registrars `registerDiscoveryCommands`, `registerSystemCommands`, `registerShellCommands` — replaced by per-subcommand exports invoked through `ApcliGroup`.
+
 ### Fixed
 
 - **`describe-pipeline --strategy <name>` now works for non-current strategies.** Previously the command called `executor.describePipeline(strategyName)` — the real apcore-js signature takes no arguments and always returns info for the executor's *current* strategy, so all `--strategy` values produced identical output. `src/strategy.ts` now uses a two-step lookup: if the requested name matches the current strategy, use `describePipeline()`; otherwise fall back to the static `Executor.listStrategies()` (reached via `executor.constructor.listStrategies`) to introspect other registered strategies.
 - **`--binding <path>` flag now actually applies display overlay.** `applyToolkitIntegration` previously instantiated a `DisplayResolver` and discarded it. The implementation now uses apcore-toolkit 0.5.0's `BindingLoader` + `DisplayResolver` pipeline to parse the binding YAML, resolve the sparse overlay, and populate a module-level binding display map. `display-helpers.ts#getDisplay` consults the map as a fallback when the descriptor itself has no `metadata.display`, so `cli.alias` / `cli.description` / tags from `.binding.yaml` are now honored by `list`, `describe`, and command help output. New exports: `lookupBindingDisplay(moduleId)` and `clearBindingDisplayMap()` from `src/main.ts`.
+
+### Breaking
+
+- Reserved-name enforcement is now a **hard exit 2** when a module's explicit group, auto-group prefix, or top-level name/alias equals `apcli`. Previously this was warn-and-drop.
 
 ---
 

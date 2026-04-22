@@ -1,0 +1,5 @@
+apcli:
+  mode: include
+  include:
+    - list
+    - describe

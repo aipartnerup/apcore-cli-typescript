@@ -186,43 +186,66 @@ apcore-cli [OPTIONS] COMMAND [ARGS]
 | `--verbose` | | Show all options in help (including built-in apcore options) |
 | `--man` | | Output man page in roff format (use with `--help`) |
 
-### Built-in Commands
+### Built-in Commands (the `apcli` group)
 
-The canonical 14 built-in commands (see `BUILTIN_COMMANDS` in `src/cli.ts`):
+Starting in **v0.7.0**, all built-in commands live under an `apcli` sub-group
+(see the `RESERVED_GROUP_NAMES` collision surface in `src/builtin-group.ts`).
+Invocation:
+
+```bash
+apcore-cli apcli list
+apcore-cli apcli describe math.add
+apcore-cli apcli exec math.add --a 5 --b 10
+```
+
+> **Migration note (v0.7):** Root-level invocations (`apcore-cli list`, `apcore-cli describe`, …) still work in **standalone mode** but emit a deprecation
+> `WARNING` and are removed in v0.8. Embedded integrations (host CLIs that
+> inject a `registry`) never had root-level built-ins in the first place and
+> see no warnings. See the full migration timeline in the spec repo:
+> [`docs/features/builtin-group.md §11 Migration`](../apcore-cli/docs/features/builtin-group.md#11-migration).
+
+The canonical 13 `apcli` subcommands:
 
 **Module invocation & discovery**
 
 | Command | Description |
 |---------|-------------|
-| `list` | List available modules with search, status, tag/annotation filters, sort, and dependency inspection (see `src/commands/list-cmd.ts`) |
-| `describe <module_id>` | Show full module metadata, schemas, and annotations (see `src/commands/describe-cmd.ts`) |
-| `describe-pipeline <module_id>` | Inspect the execution pipeline for a module (strategies, hooks, middleware; see `src/commands/describe-pipeline-cmd.ts`) |
-| `exec <module_id>` | Internal routing alias for module execution (see `src/commands/exec-cmd.ts`) |
-| `usage <module_id>` | Show usage examples and flag hints for a module (see `src/commands/usage-cmd.ts`) |
+| `apcli list` | List available modules with search, status, tag/annotation filters, sort, and dependency inspection (see `src/commands/list-cmd.ts`) |
+| `apcli describe <module_id>` | Show full module metadata, schemas, and annotations (see `src/commands/describe-cmd.ts`) |
+| `apcli describe-pipeline <module_id>` | Inspect the execution pipeline for a module (strategies, hooks, middleware; see `src/commands/describe-pipeline-cmd.ts`) |
+| `apcli exec <module_id>` | Internal routing alias for module execution (see `src/commands/exec-cmd.ts`) |
+| `apcli usage <module_id>` | Show usage examples and flag hints for a module (see `src/commands/usage-cmd.ts`) |
 
 **System management**
 
 | Command | Description |
 |---------|-------------|
-| `config` | Inspect effective configuration and precedence (see `src/commands/system-cmd.ts`) |
-| `health` | Run health checks on registry, executor, config, and auth (see `src/commands/system-cmd.ts`) |
-| `reload` | Reload registry / rediscover extensions (see `src/commands/system-cmd.ts`) |
-| `enable <module_id>` | Enable a disabled module (see `src/commands/system-cmd.ts`) |
-| `disable <module_id>` | Disable a module without removing it (see `src/commands/system-cmd.ts`) |
+| `apcli config` | Inspect effective configuration and precedence (see `src/commands/system-cmd.ts`) |
+| `apcli health` | Run health checks on registry, executor, config, and auth (see `src/commands/system-cmd.ts`) |
+| `apcli reload` | Reload registry / rediscover extensions (see `src/commands/system-cmd.ts`) |
+| `apcli enable <module_id>` | Enable a disabled module (see `src/commands/system-cmd.ts`) |
+| `apcli disable <module_id>` | Disable a module without removing it (see `src/commands/system-cmd.ts`) |
 
 **Workflow**
 
 | Command | Description |
 |---------|-------------|
-| `init` | Scaffold a starter `apcore.yaml` / extensions layout (see `src/commands/init-cmd.ts`) |
-| `validate` | Validate modules and configuration against JSON Schema (see `src/commands/validate-cmd.ts`) |
+| `apcli init` | Scaffold a starter `apcore.yaml` / extensions layout (see `src/commands/init-cmd.ts`) |
+| `apcli validate` | Validate modules and configuration against JSON Schema (see `src/commands/validate-cmd.ts`) |
 
 **Shell integration**
 
 | Command | Description |
 |---------|-------------|
-| `completion <shell>` | Generate shell completion script for bash / zsh / fish (see `src/commands/completion-cmd.ts`) |
-| `man [command]` | Generate a man page in roff format for a single command or the whole program (see `src/man.ts`) |
+| `apcli completion <shell>` | Generate shell completion script for bash / zsh / fish (see `src/commands/completion-cmd.ts`) |
+| `man [command]` (root) | Generate a man page in roff format for a single command or the whole program (see `src/man.ts`). Stays at the root (meta-command). |
+
+#### Standalone vs. embedded surfaces
+
+| Mode | Invocation | Notes |
+|------|------------|-------|
+| **Standalone** (`apcore-cli`) | `apcore-cli apcli <subcommand>` | Discovery flags (`--extensions-dir`, `--commands-dir`, `--binding`) are registered. Legacy root-level built-ins are kept as deprecation shims. |
+| **Embedded** (`createCli({ registry, … })`) | `<host-cli> apcli <subcommand>` | Discovery flags are gated off (injected registry already supplies modules). No legacy shims — embedded hosts are new territory. |
 
 ### Module Execution Options
 

@@ -7,7 +7,6 @@ import {
   GroupedModuleGroup,
   LazyGroup,
   LazyModuleGroup,
-  BUILTIN_COMMANDS,
 } from "../src/cli.js";
 import { getDisplay, getCliDisplayFields } from "../src/display-helpers.js";
 import type { ModuleDescriptor, Registry, Executor } from "../src/cli.js";
@@ -232,16 +231,70 @@ describe("GroupedModuleGroup.buildGroupMap", () => {
     expect(group.getGroupMap().size).toBe(firstSize);
   });
 
-  it("warns on builtin collision", () => {
+  it("T-APCLI-16: explicit display.cli.group='apcli' exits 2 (reserved)", () => {
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const desc = makeMod("list.items", "desc", { cli: { group: "list", alias: "items" } });
-    const defs: Array<[string, ModuleDescriptor]> = [["list.items", desc]];
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("exit");
+    }) as never);
+    const desc = makeMod("my.mod", "desc", { cli: { group: "apcli", alias: "items" } });
+    const defs: Array<[string, ModuleDescriptor]> = [["my.mod", desc]];
     const group = makeGroupedGroup(defs);
-    group.buildGroupMap();
-    expect(stderrSpy).toHaveBeenCalled();
+    expect(() => group.buildGroupMap()).toThrow("exit");
+    expect(exitSpy).toHaveBeenCalledWith(2);
     const calls = stderrSpy.mock.calls.map((c) => String(c[0]));
-    expect(calls.some((c) => c.includes("collides"))).toBe(true);
+    expect(calls.some((c) => /my\.mod/.test(c) && /apcli/.test(c) && /reserved/i.test(c))).toBe(true);
     stderrSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("T-APCLI-16b: auto-grouped module id 'apcli.foo' exits 2 (reserved)", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("exit");
+    }) as never);
+    const desc = makeMod("apcli.foo", "desc");
+    const defs: Array<[string, ModuleDescriptor]> = [["apcli.foo", desc]];
+    const group = makeGroupedGroup(defs);
+    expect(() => group.buildGroupMap()).toThrow("exit");
+    expect(exitSpy).toHaveBeenCalledWith(2);
+    const calls = stderrSpy.mock.calls.map((c) => String(c[0]));
+    expect(calls.some((c) => /apcli\.foo/.test(c) && /apcli/.test(c) && /reserved/i.test(c))).toBe(true);
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("T-APCLI-17: top-level module name 'apcli' exits 2 (reserved)", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("exit");
+    }) as never);
+    // Top-level (no dot, no explicit group) with module id literally 'apcli'.
+    const desc = makeMod("apcli", "desc");
+    const defs: Array<[string, ModuleDescriptor]> = [["apcli", desc]];
+    const group = makeGroupedGroup(defs);
+    expect(() => group.buildGroupMap()).toThrow("exit");
+    expect(exitSpy).toHaveBeenCalledWith(2);
+    const calls = stderrSpy.mock.calls.map((c) => String(c[0]));
+    expect(calls.some((c) => /apcli/.test(c) && /reserved/i.test(c))).toBe(true);
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("T-APCLI-17b: top-level alias 'apcli' via display overlay exits 2 (reserved)", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("exit");
+    }) as never);
+    // Module id 'my-mod' (no dot) but alias explicitly 'apcli'.
+    const desc = makeMod("mymod", "desc", { cli: { alias: "apcli" } });
+    const defs: Array<[string, ModuleDescriptor]> = [["mymod", desc]];
+    const group = makeGroupedGroup(defs);
+    expect(() => group.buildGroupMap()).toThrow("exit");
+    expect(exitSpy).toHaveBeenCalledWith(2);
+    const calls = stderrSpy.mock.calls.map((c) => String(c[0]));
+    expect(calls.some((c) => /mymod/.test(c) && /apcli/.test(c) && /reserved/i.test(c))).toBe(true);
+    stderrSpy.mockRestore();
+    exitSpy.mockRestore();
   });
 
   it("invalid group name falls back to top-level", () => {
@@ -274,7 +327,7 @@ describe("GroupedModuleGroup.buildGroupMap", () => {
 // ---------------------------------------------------------------------------
 
 describe("GroupedModuleGroup routing", () => {
-  it("listCommands shows groups and top-level", () => {
+  it("listCommands shows groups and top-level (FE-13: built-ins live under apcli, not here)", () => {
     const defs: Array<[string, ModuleDescriptor]> = [
       ["math.add", makeMod("math.add")],
       ["status", makeMod("status")],
@@ -283,7 +336,9 @@ describe("GroupedModuleGroup routing", () => {
     const commands = group.listCommands();
     expect(commands).toContain("math"); // group
     expect(commands).toContain("status"); // top-level
-    expect(commands).toContain("exec"); // builtin
+    // Built-in subcommands (exec, list, describe, etc.) no longer appear in
+    // the module-group listing — they live under the `apcli` prefix now.
+    expect(commands).not.toContain("exec");
   });
 
   it("getCommand returns a Command for group", () => {
@@ -363,15 +418,27 @@ describe("LazyGroup", () => {
 });
 
 // ---------------------------------------------------------------------------
-// BUILTIN_COMMANDS constant
+// apcli group parity (FE-13 — canonical apcli subcommands)
 // ---------------------------------------------------------------------------
 
-describe("BUILTIN_COMMANDS", () => {
-  it("contains expected entries", () => {
-    expect(BUILTIN_COMMANDS).toContain("exec");
-    expect(BUILTIN_COMMANDS).toContain("list");
-    expect(BUILTIN_COMMANDS).toContain("describe");
-    expect(BUILTIN_COMMANDS).toContain("completion");
-    expect(BUILTIN_COMMANDS).toContain("man");
+describe("apcli group parity (FE-13)", () => {
+  it("createCli registers the canonical apcli subcommands under an 'apcli' Commander group", async () => {
+    const { createCli } = await import("../src/main.js");
+    const registry = {
+      listModules: () => [],
+      getModule: () => null,
+    };
+    const executor = {
+      execute: vi.fn(async () => ({})),
+      call: vi.fn(async () => ({})),
+      validate: vi.fn(async () => ({ valid: true, requiresApproval: false, checks: [] })),
+    };
+    const cli = createCli({ registry, executor, apcli: { mode: "all" }, progName: "t" });
+    const apcliGroup = cli.commands.find((c) => c.name() === "apcli");
+    expect(apcliGroup).toBeDefined();
+    const names = apcliGroup!.commands.map((c) => c.name());
+    for (const expected of ["list", "describe", "exec", "completion"]) {
+      expect(names).toContain(expected);
+    }
   });
 });

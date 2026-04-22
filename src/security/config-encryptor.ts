@@ -7,6 +7,7 @@
 import * as crypto from "node:crypto";
 import * as os from "node:os";
 import { ConfigDecryptionError } from "../errors.js";
+import { warn as logWarn } from "../logger.js";
 
 // ---------------------------------------------------------------------------
 // Keytar dynamic import helper
@@ -30,10 +31,15 @@ async function getKeytar(): Promise<any> { // eslint-disable-line @typescript-es
 
 /**
  * Encrypts and decrypts configuration values. Prefers OS keyring for key
- * storage, falling back to AES-256-GCM with a derived key.
+ * storage, falling back to AES-256-GCM with a key derived from
+ * APCORE_CLI_CONFIG_PASSPHRASE when set, or from hostname+username
+ * (obfuscation-only) as a last resort.
  */
 export class ConfigEncryptor {
   static readonly SERVICE_NAME = "apcore-cli";
+  // One-shot flag so the "obfuscation only" warning fires exactly once
+  // per process instead of once per encrypt/decrypt call.
+  private static weakFallbackWarned = false;
 
   /**
    * Encrypt and store a configuration value.
@@ -48,7 +54,7 @@ export class ConfigEncryptor {
         // Fall through to file-based encryption
       }
     }
-    console.warn("OS keyring unavailable. Using file-based encryption.");
+    logWarn("OS keyring unavailable. Using file-based encryption.");
     const ciphertext = this.aesEncrypt(value);
     return `enc:${Buffer.from(ciphertext).toString("base64")}`;
   }
@@ -102,14 +108,37 @@ export class ConfigEncryptor {
     return configValue;
   }
 
-  // NOTE: Best-effort fallback when OS keyring is unavailable.
-  // The key is derived from hostname + username (non-secret inputs).
-  // For production security, ensure the OS keyring is accessible.
+  // Derive an AES-256 key for the `enc:` fallback.
+  //
+  // Order of preference:
+  //   1. APCORE_CLI_CONFIG_PASSPHRASE env var — a real secret supplied by
+  //      the user; produces a key an attacker with filesystem read cannot
+  //      reconstruct without also knowing the passphrase.
+  //   2. hostname + username — obfuscation-only derivation for backward
+  //      compatibility. Emits a loud stderr warning on first use so
+  //      operators know the stored value is NOT protected against a
+  //      filesystem-read attacker.
+  //
+  // For production security, set APCORE_CLI_CONFIG_PASSPHRASE or ensure
+  // the OS keyring (keytar) is accessible so store() never reaches this path.
   private deriveKey(): Buffer {
-    const hostname = os.hostname();
-    const username =
-      process.env.USER ?? process.env.USERNAME ?? "unknown";
     const salt = Buffer.from("apcore-cli-config-v1");
+    const passphrase = process.env.APCORE_CLI_CONFIG_PASSPHRASE;
+    if (passphrase && passphrase.length > 0) {
+      return crypto.pbkdf2Sync(passphrase, salt, 100_000, 32, "sha256");
+    }
+    if (!ConfigEncryptor.weakFallbackWarned) {
+      logWarn(
+        "APCORE_CLI_CONFIG_PASSPHRASE is not set. The `enc:` fallback uses a key " +
+          "derived from hostname+username (non-secret inputs) and is OBFUSCATION " +
+          "ONLY — an attacker with filesystem read access can reconstruct the key. " +
+          "Set APCORE_CLI_CONFIG_PASSPHRASE or ensure the OS keyring is available " +
+          "for real encryption.",
+      );
+      ConfigEncryptor.weakFallbackWarned = true;
+    }
+    const hostname = os.hostname();
+    const username = process.env.USER ?? process.env.USERNAME ?? "unknown";
     const material = `${hostname}:${username}`;
     return crypto.pbkdf2Sync(material, salt, 100_000, 32, "sha256");
   }

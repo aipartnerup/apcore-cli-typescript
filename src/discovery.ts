@@ -1,7 +1,10 @@
 /**
- * Discovery commands — list, describe, validate (FE-04, FE-11).
+ * Discovery commands — list, describe, exec, validate (FE-04, FE-11, FE-13).
  *
  * Protocol spec: Module discovery & introspection
+ *
+ * FE-13 (builtin-group): these registrars attach per-subcommand to an
+ * `apcli` Commander sub-group rather than to the root program.
  */
 
 import { Command, Option } from "commander";
@@ -9,6 +12,7 @@ import type { Executor, ModuleDescriptor, Registry } from "./cli.js";
 import { EXIT_CODES } from "./errors.js";
 import { validateModuleId, collectInput } from "./main.js";
 import {
+  formatExecResult,
   formatModuleDetail,
   formatModuleList,
   formatPreflightResult,
@@ -62,10 +66,10 @@ function getAnnotationFlag(moduleDef: ModuleDescriptor, flag: string): boolean {
 }
 
 /**
- * Register list and describe commands on the CLI group.
+ * Register the `list` subcommand on the given group (FE-13).
  */
-export function registerDiscoveryCommands(
-  cli: Command,
+export function registerListCommand(
+  apcliGroup: Command,
   registry: Registry,
   exposureFilter?: import("./exposure.js").ExposureFilter,
 ): void {
@@ -193,8 +197,16 @@ export function registerDiscoveryCommands(
       const filterTagsArg = opts.tag.length > 0 ? opts.tag : undefined;
       formatModuleList(modules, fmt, filterTagsArg, opts.deps, showExposureCol ? exposureFilter : undefined);
     });
-  cli.addCommand(listCmd);
+  apcliGroup.addCommand(listCmd);
+}
 
+/**
+ * Register the `describe` subcommand on the given group (FE-13).
+ */
+export function registerDescribeCommand(
+  apcliGroup: Command,
+  registry: Registry,
+): void {
   const describeCmd = new Command("describe")
     .description("Show metadata, schema, and annotations for a module.")
     .argument("<module-id>", "Module ID to describe")
@@ -213,7 +225,72 @@ export function registerDiscoveryCommands(
       const fmt = resolveFormat(opts.format);
       formatModuleDetail(moduleDef, fmt);
     });
-  cli.addCommand(describeCmd);
+  apcliGroup.addCommand(describeCmd);
+}
+
+/**
+ * Register the `exec` subcommand on the given group (FE-13).
+ *
+ * Generic dispatch: `apcli exec <module-id> [--format fmt] [--input json]`.
+ * Unlike the per-module commands built by `buildModuleCommand`, this command
+ * does not derive options from the module's input schema — inputs are passed
+ * as a JSON object via `--input`. This mirrors the apcli-flavoured generic
+ * dispatch contract in the builtin-group feature spec.
+ */
+export function registerExecCommand(
+  apcliGroup: Command,
+  registry: Registry,
+  executor: Executor,
+): void {
+  const execCmd = new Command("exec")
+    .description("Execute a module by ID with JSON input.")
+    .argument("<module-id>", "Module ID to execute")
+    .option("--format <format>", "Output format (json, table, csv, yaml, jsonl).")
+    .option("--fields <fields>", "Comma-separated dot-paths to select from the result.")
+    .option(
+      "--input <json>",
+      "JSON object passed as input to the module. Use '-' to read JSON from stdin.",
+    )
+    .action(async (
+      moduleId: string,
+      opts: { format?: string; fields?: string; input?: string },
+    ) => {
+      validateModuleId(moduleId);
+
+      const moduleDef = registry.getModule(moduleId);
+      if (!moduleDef) {
+        process.stderr.write(`Error: Module '${moduleId}' not found.\n`);
+        process.exit(EXIT_CODES.MODULE_NOT_FOUND);
+      }
+
+      // Parse --input. Distinguish between a stdin marker ("-") — delegated
+      // to collectInput — and an inline JSON literal, which we parse directly
+      // here since collectInput only treats "-" specially.
+      let merged: Record<string, unknown> = {};
+      if (opts.input === "-") {
+        merged = await collectInput("-", {}, false);
+      } else if (opts.input !== undefined) {
+        try {
+          const parsed = JSON.parse(opts.input);
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            process.stderr.write(
+              "Error: --input JSON must be an object.\n",
+            );
+            process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+          }
+          merged = parsed as Record<string, unknown>;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          process.stderr.write(`Error: --input is not valid JSON: ${msg}\n`);
+          process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+        }
+      }
+
+      const result = await executor.execute(moduleId, merged);
+      const fmt = resolveFormat(opts.format);
+      formatExecResult(result, fmt, opts.fields);
+    });
+  apcliGroup.addCommand(execCmd);
 }
 
 /**
@@ -242,7 +319,7 @@ export function registerValidateCommand(
 
       if (!executor.validate) {
         process.stderr.write("Error: Executor does not support validate.\n");
-        process.exit(1);
+        process.exit(EXIT_CODES.MODULE_EXECUTE_ERROR);
       }
 
       const preflight = await executor.validate(moduleId, merged);
@@ -251,3 +328,6 @@ export function registerValidateCommand(
     });
   cli.addCommand(validateCmd);
 }
+
+// registerDiscoveryCommands was removed in FE-13 create-cli-integration.
+// Call registerListCommand + registerDescribeCommand directly.
