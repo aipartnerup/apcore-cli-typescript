@@ -144,6 +144,41 @@ describe("createCli() with pre-populated registry", () => {
     expect(cli.name()).toBe("compat-test");
   });
 
+  // Regression: apcli list --exposure must consult the program-level
+  // ExposureFilter. Previously the filter was constructed then stashed on
+  // the program object with zero readers; the list registrar received no
+  // filter and the --exposure flag was inert.
+  it("apcli list --exposure hidden filters via the createCli expose option", async () => {
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation(
+      (chunk: string | Uint8Array) => {
+        output += typeof chunk === "string" ? chunk : chunk.toString();
+        return true;
+      },
+    );
+    const registry = {
+      listModules: () => [
+        makeMod("public.add", "Public module"),
+        makeMod("public.sub", "Public module"),
+        makeMod("admin.secret", "Admin module"),
+      ],
+      getModule: () => null,
+    };
+    const executor = makeExecutor();
+    const cli = createCli({
+      progName: "t",
+      registry,
+      executor,
+      expose: { mode: "include", include: ["public.*"] },
+    });
+    await cli.parseAsync(
+      ["apcli", "list", "--exposure", "hidden", "--format", "json"],
+      { from: "user" },
+    );
+    const parsed = JSON.parse(output);
+    expect(parsed.map((p: { id: string }) => p.id).sort()).toEqual(["admin.secret"]);
+  });
+
   // Review fix #1: malformed `expose` option previously threw uncaught,
   // producing exit 1 with a raw error message. Now the throw is caught
   // and mapped to INVALID_CLI_INPUT (2) with a prefixed user-facing line.

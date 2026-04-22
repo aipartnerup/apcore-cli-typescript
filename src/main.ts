@@ -386,17 +386,11 @@ export function createCli(
     void resolvedExtDir; // Will be used when apcore-js registry is wired
   }
 
-  _registerApcliSubcommands(apcliGroup, apcliCfg, registry, executor);
-
-  // FE-13 §11.2: standalone-mode deprecation shims for the 13 former
-  // root-level commands. No-op in embedded mode so branded CLIs never surface
-  // apcore-cli deprecation warnings to their end users.
-  _registerDeprecationShims(program, apcliGroup, registryInjected, resolvedProgName);
-
-  // Build exposure filter (FE-12). fromConfig throws on malformed shape
-  // (e.g. { mode: "bogus" }) — catch and exit with INVALID_CLI_INPUT so
-  // the caller sees a friendly message and the documented exit code, matching
-  // ApcliGroup._build's contract (review fix #1).
+  // Build exposure filter (FE-12) BEFORE the apcli dispatcher table so
+  // registerListCommand can consult the filter for --exposure. fromConfig
+  // throws on malformed shape (e.g. { mode: "bogus" }) — catch and exit with
+  // INVALID_CLI_INPUT so the caller sees a friendly message and the documented
+  // exit code, matching ApcliGroup._build's contract (review fix #1).
   let exposureFilter: ExposureFilter;
   try {
     if (expose instanceof ExposureFilter) {
@@ -411,7 +405,13 @@ export function createCli(
     process.stderr.write(`Error: invalid 'expose' option — ${msg}\n`);
     process.exit(EXIT_CODES.INVALID_CLI_INPUT);
   }
-  (program as unknown as Record<string, unknown>)._exposureFilter = exposureFilter;
+
+  _registerApcliSubcommands(apcliGroup, apcliCfg, registry, executor, exposureFilter);
+
+  // FE-13 §11.2: standalone-mode deprecation shims for the 13 former
+  // root-level commands. No-op in embedded mode so branded CLIs never surface
+  // apcore-cli deprecation warnings to their end users.
+  _registerDeprecationShims(program, apcliGroup, registryInjected, resolvedProgName);
 
   // Footer hints for discoverability
   program.addHelpText("after", [
@@ -509,6 +509,7 @@ function _registerApcliSubcommands(
   apcliCfg: ApcliGroup,
   registry: Registry | undefined,
   executor: Executor | undefined,
+  exposureFilter: ExposureFilter,
 ): void {
   // Standalone-mode fallback registry. Previously returned an empty list +
   // null; that silently masked the "no registry wired" contract gap — users
@@ -528,7 +529,7 @@ function _registerApcliSubcommands(
   };
 
   const TABLE: _RegistrarEntry[] = [
-    { name: "list",              requiresExecutor: false, register: (g) => registerListCommand(g, effectiveRegistry) },
+    { name: "list",              requiresExecutor: false, register: (g) => registerListCommand(g, effectiveRegistry, exposureFilter) },
     { name: "describe",          requiresExecutor: false, register: (g) => registerDescribeCommand(g, effectiveRegistry) },
     { name: "exec",              requiresExecutor: true,  register: (g, _r, ex) => registerExecCommand(g, effectiveRegistry, ex!) },
     { name: "validate",          requiresExecutor: true,  register: (g, _r, ex) => registerValidateCommand(g, effectiveRegistry, ex!) },
