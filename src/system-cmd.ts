@@ -226,12 +226,9 @@ export function registerEnableCommand(apcliGroup: Command, executor: Executor): 
     .description("Enable a disabled module at runtime.")
     .argument("<module-id>", "Module ID to enable")
     .requiredOption("--reason <reason>", "Reason for enabling (required for audit).")
-    .option("-y, --yes", "Skip approval prompt.", false)
+    .option("-y, --yes", "Signal explicit intent (forwarded to server-side approval gate).", false)
     .option("--format <format>", "Output format.")
     .action(async (moduleId: string, opts: { reason: string; yes: boolean; format?: string }) => {
-      if (!opts.yes) {
-        process.stderr.write("Note: This command requires approval. Use --yes to bypass.\n");
-      }
       const fmt = resolveFormat(opts.format);
       try {
         const result = await callSystemModule(executor, "system.control.toggle_feature", {
@@ -259,12 +256,9 @@ export function registerDisableCommand(apcliGroup: Command, executor: Executor):
     .description("Disable a module at runtime (calls are rejected until re-enabled).")
     .argument("<module-id>", "Module ID to disable")
     .requiredOption("--reason <reason>", "Reason for disabling (required for audit).")
-    .option("-y, --yes", "Skip approval prompt.", false)
+    .option("-y, --yes", "Signal explicit intent (forwarded to server-side approval gate).", false)
     .option("--format <format>", "Output format.")
     .action(async (moduleId: string, opts: { reason: string; yes: boolean; format?: string }) => {
-      if (!opts.yes) {
-        process.stderr.write("Note: This command requires approval. Use --yes to bypass.\n");
-      }
       const fmt = resolveFormat(opts.format);
       try {
         const result = await callSystemModule(executor, "system.control.toggle_feature", {
@@ -292,12 +286,9 @@ export function registerReloadCommand(apcliGroup: Command, executor: Executor): 
     .description("Hot-reload a module from disk.")
     .argument("<module-id>", "Module ID to reload")
     .requiredOption("--reason <reason>", "Reason for reload (required for audit).")
-    .option("-y, --yes", "Skip approval prompt.", false)
+    .option("-y, --yes", "Signal explicit intent (forwarded to server-side approval gate).", false)
     .option("--format <format>", "Output format.")
     .action(async (moduleId: string, opts: { reason: string; yes: boolean; format?: string }) => {
-      if (!opts.yes) {
-        process.stderr.write("Note: This command requires approval. Use --yes to bypass.\n");
-      }
       const fmt = resolveFormat(opts.format);
       try {
         const result = await callSystemModule(executor, "system.control.reload_module", {
@@ -355,7 +346,7 @@ export function registerConfigCommand(apcliGroup: Command, executor: Executor): 
   configGroup.addCommand(configGetCmd);
 
   const configSetCmd = new Command("set")
-    .description("Update a runtime configuration value (requires approval).")
+    .description("Update a runtime configuration value (audit-logged; server-side approval gate applies).")
     .argument("<key>", "Configuration key (dot-path)")
     .argument("<value>", "New value")
     .requiredOption("--reason <reason>", "Reason for config change (required for audit).")

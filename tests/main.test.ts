@@ -2,9 +2,12 @@
  * Tests for main.ts — createCli, buildModuleCommand, Commander exitOverride.
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Command, CommanderError } from "commander";
-import { createCli, buildModuleCommand } from "../src/main.js";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { createCli, buildModuleCommand, collectInput, resolveIntOption, resolveStringOption } from "../src/main.js";
 import type { ModuleDescriptor, Executor } from "../src/cli.js";
 
 afterEach(() => {
@@ -1091,5 +1094,113 @@ describe("Review Issue 6: apcli group hidden uses Commander public API, not _hid
     const helpText = cli.helpInformation();
     const commandsSection = helpText.split("Commands:")[1] ?? "";
     expect(commandsSection).toMatch(/^\s*apcli\b/m);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveIntOption / resolveStringOption — env-var 4-tier chain (C-1)
+// ---------------------------------------------------------------------------
+
+describe("resolveIntOption", () => {
+  it("prefers CLI flag over env var", () => {
+    expect(resolveIntOption(30, "999", 60)).toBe(30);
+  });
+
+  it("falls back to env var when CLI flag is undefined", () => {
+    expect(resolveIntOption(undefined, "120", 60)).toBe(120);
+  });
+
+  it("falls back to default when neither CLI flag nor env var is provided", () => {
+    expect(resolveIntOption(undefined, undefined, 60)).toBe(60);
+    expect(resolveIntOption(undefined, "", 60)).toBe(60);
+  });
+
+  it("warns and falls back to default on invalid env value", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    expect(resolveIntOption(undefined, "abc", 60)).toBe(60);
+    expect(resolveIntOption(undefined, "-5", 60)).toBe(60);
+    expect(resolveIntOption(undefined, "0", 60)).toBe(60);
+    const msgs = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(msgs).toMatch(/invalid integer env value/);
+    stderrSpy.mockRestore();
+  });
+
+  it("rejects NaN / non-positive CLI values and falls through to env", () => {
+    expect(resolveIntOption(NaN, "120", 60)).toBe(120);
+    expect(resolveIntOption(0, "120", 60)).toBe(120);
+    expect(resolveIntOption(-1, "120", 60)).toBe(120);
+  });
+});
+
+describe("resolveStringOption", () => {
+  it("prefers CLI flag over env var", () => {
+    expect(resolveStringOption("performance", "minimal")).toBe("performance");
+  });
+
+  it("falls back to env var when CLI flag is absent or empty", () => {
+    expect(resolveStringOption(undefined, "minimal")).toBe("minimal");
+    expect(resolveStringOption("", "minimal")).toBe("minimal");
+  });
+
+  it("returns undefined when neither set", () => {
+    expect(resolveStringOption(undefined, undefined)).toBeUndefined();
+    expect(resolveStringOption("", "")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectInput — --input <file-path> support (W-15)
+// ---------------------------------------------------------------------------
+
+describe("collectInput — file-path input", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "collect-input-test-"));
+  });
+  afterEach(() => {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  });
+
+  it("reads JSON from a file path when stdinFlag is not '-'", async () => {
+    const filePath = path.join(tmpDir, "data.json");
+    fs.writeFileSync(filePath, JSON.stringify({ a: 1, b: { x: 2 } }));
+    const merged = await collectInput(filePath, {});
+    expect(merged).toEqual({ a: 1, b: { x: 2 } });
+  });
+
+  it("CLI kwargs override file keys for duplicates", async () => {
+    const filePath = path.join(tmpDir, "data.json");
+    fs.writeFileSync(filePath, JSON.stringify({ a: 1, b: 2 }));
+    const merged = await collectInput(filePath, { a: 999 });
+    expect(merged).toEqual({ a: 999, b: 2 });
+  });
+
+  it("exits with INVALID_CLI_INPUT on missing file", async () => {
+    const missing = path.join(tmpDir, "does-not-exist.json");
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("EXIT"); }) as never;
+    await expect(collectInput(missing, {})).rejects.toThrow("EXIT");
+    expect(stderrSpy.mock.calls.map((c) => String(c[0])).join("")).toMatch(/Could not read input file/);
+    expect(exitSpy).toHaveBeenCalledWith(2);
+  });
+
+  it("exits with INVALID_CLI_INPUT on invalid JSON in file", async () => {
+    const filePath = path.join(tmpDir, "bad.json");
+    fs.writeFileSync(filePath, "not json");
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("EXIT"); }) as never;
+    await expect(collectInput(filePath, {})).rejects.toThrow("EXIT");
+    expect(stderrSpy.mock.calls.map((c) => String(c[0])).join("")).toMatch(/does not contain valid JSON/);
+    expect(exitSpy).toHaveBeenCalledWith(2);
+  });
+
+  it("exits with INVALID_CLI_INPUT when file JSON is not an object", async () => {
+    const filePath = path.join(tmpDir, "array.json");
+    fs.writeFileSync(filePath, JSON.stringify([1, 2, 3]));
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("EXIT"); }) as never;
+    await expect(collectInput(filePath, {})).rejects.toThrow("EXIT");
+    expect(stderrSpy.mock.calls.map((c) => String(c[0])).join("")).toMatch(/JSON must be an object, got array/);
+    expect(exitSpy).toHaveBeenCalledWith(2);
   });
 });

@@ -5,6 +5,7 @@
  */
 
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import yaml from "js-yaml";
 import { warn as logWarn } from "./logger.js";
 
@@ -87,9 +88,12 @@ const LEGACY_TO_NAMESPACE: Record<string, string> = Object.fromEntries(
  */
 export function registerConfigNamespace(): void {
   try {
-    // Dynamic import to avoid hard failure when apcore-js is not available
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Config } = require("apcore-js");
+    // Use createRequire to load apcore-js from an ESM module without relying on
+    // tsup's `shims` option (which injects a `require` into the bundled output
+    // but not into vitest/tsx dev paths). Native `require()` at module scope is
+    // a ReferenceError in strict ESM and would silently no-op via the catch.
+    const nodeRequire = createRequire(import.meta.url);
+    const { Config } = nodeRequire("apcore-js");
     if (typeof Config?.registerNamespace === "function") {
       Config.registerNamespace({
         name: "apcore-cli",

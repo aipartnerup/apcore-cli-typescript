@@ -6,7 +6,7 @@
 
 import * as readline from "node:readline";
 import type { ModuleDescriptor } from "./cli.js";
-import { ApprovalTimeoutError, EXIT_CODES } from "./errors.js";
+import { ApprovalDeniedError, ApprovalTimeoutError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -23,6 +23,18 @@ function getAnnotation(
   if (!annotations || typeof annotations !== "object") return defaultValue;
   const ann = annotations as Record<string, unknown>;
   return key in ann ? ann[key] : defaultValue;
+}
+
+/**
+ * Read APCORE_CLI_APPROVAL_TIMEOUT env var (positive integer seconds).
+ * Returns undefined on absent/empty/invalid values.
+ */
+function readTimeoutFromEnv(): number | undefined {
+  const raw = process.env.APCORE_CLI_APPROVAL_TIMEOUT;
+  if (raw === undefined || raw === "") return undefined;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return parsed;
 }
 
 // ---------------------------------------------------------------------------
@@ -42,9 +54,10 @@ export class CliApprovalHandler {
   autoApprove: boolean;
   timeout: number;
 
-  constructor(autoApprove = false, timeout = 60) {
+  constructor(autoApprove = false, timeout?: number) {
     this.autoApprove = autoApprove;
-    this.timeout = Math.max(1, Math.min(timeout, 3600));
+    const resolved = timeout ?? readTimeoutFromEnv() ?? 60;
+    this.timeout = Math.max(1, Math.min(resolved, 3600));
   }
 
   async requestApproval(request: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -57,6 +70,11 @@ export class CliApprovalHandler {
     const envVal = process.env.APCORE_CLI_AUTO_APPROVE ?? "";
     if (envVal === "1") {
       return { status: "approved", approved_by: "env_auto_approve" };
+    }
+    if (envVal !== "" && envVal !== "1") {
+      process.stderr.write(
+        `Warning: APCORE_CLI_AUTO_APPROVE is set to '${envVal}', expected '1'. Ignoring.\n`,
+      );
     }
 
     if (!process.stdin.isTTY) {
@@ -89,12 +107,14 @@ export class CliApprovalHandler {
 /**
  * Check if module requires approval and handle accordingly.
  * Returns normally if approved (or approval not required).
- * Calls process.exit(46) if denied/timed out/non-TTY.
+ * Throws ApprovalDeniedError or ApprovalTimeoutError on denial/timeout so the
+ * caller (buildModuleCommand action) can run audit flush and tear-down before
+ * the process exits via the shared error path.
  */
 export async function checkApproval(
   moduleDef: ModuleDescriptor,
   autoApprove: boolean,
-  timeout: number = 60,
+  timeout?: number,
 ): Promise<void> {
   const annotations = moduleDef.annotations;
 
@@ -130,18 +150,17 @@ export async function checkApproval(
     );
   }
 
-  // Non-TTY check
+  // Non-TTY check — throw so caller can audit-flush before exit
   if (!process.stdin.isTTY) {
-    process.stderr.write(
-      `Error: Module '${moduleId}' requires approval but no interactive ` +
-        "terminal is available. Use --yes or set APCORE_CLI_AUTO_APPROVE=1 " +
-        "to bypass.\n",
+    throw new ApprovalDeniedError(
+      `Module '${moduleId}' requires approval but no interactive terminal is available. ` +
+        "Use --yes or set APCORE_CLI_AUTO_APPROVE=1 to bypass.",
     );
-    process.exit(EXIT_CODES.APPROVAL_DENIED);
   }
 
-  // TTY prompt
-  await promptWithTimeout(moduleDef, timeout);
+  // TTY prompt — throws on deny/timeout
+  const effectiveTimeout = timeout ?? readTimeoutFromEnv() ?? 60;
+  await promptWithTimeout(moduleDef, effectiveTimeout);
 }
 
 /**
@@ -193,16 +212,12 @@ async function promptWithTimeout(
       return;
     }
 
-    process.stderr.write("Error: Approval denied.\n");
-    process.exit(EXIT_CODES.APPROVAL_DENIED);
+    throw new ApprovalDeniedError("Approval denied");
   } catch (err) {
     if (timer) clearTimeout(timer);
-    if (err instanceof ApprovalTimeoutError) {
-      process.stderr.write(
-        `Error: Approval prompt timed out after ${timeout} seconds.\n`,
-      );
-      process.exit(EXIT_CODES.APPROVAL_TIMEOUT);
-    }
+    // ApprovalTimeoutError and ApprovalDeniedError bubble up so the caller
+    // (buildModuleCommand action) can run AuditLogger flush / tear-down
+    // before the process-level error path exits via exitCodeForError.
     throw err;
   } finally {
     rl.close();

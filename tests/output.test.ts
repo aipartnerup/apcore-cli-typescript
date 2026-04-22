@@ -248,4 +248,40 @@ describe("formatExecResult()", () => {
     formatExecResult(42, "json");
     expect(output).toBe("42\n");
   });
+
+  // --- W-17 YAML spec-conformance regression ---
+  it("YAML output quotes values containing ': ' (js-yaml roundtrip)", async () => {
+    const yaml = (await import("js-yaml")).default;
+    formatExecResult({ msg: "key: value" }, "yaml");
+    const parsed = yaml.load(output);
+    expect(parsed).toEqual({ msg: "key: value" });
+  });
+
+  it("YAML output handles leading '-' / '@' / '#' without producing ambiguous YAML", async () => {
+    const yaml = (await import("js-yaml")).default;
+    formatExecResult({ a: "- item", b: "@handle", c: "#tag" }, "yaml");
+    const parsed = yaml.load(output);
+    expect(parsed).toEqual({ a: "- item", b: "@handle", c: "#tag" });
+  });
+
+  it("YAML output preserves nested structure (regression: previously JSON-stringified)", async () => {
+    const yaml = (await import("js-yaml")).default;
+    formatExecResult({ a: { b: { c: 1 } } }, "yaml");
+    const parsed = yaml.load(output);
+    expect(parsed).toEqual({ a: { b: { c: 1 } } });
+  });
+
+  // --- W-18 CSV nested-object regression ---
+  it("CSV output JSON-serializes nested objects (no more [object Object])", () => {
+    formatExecResult({ user: { name: "Alice" }, count: 3 }, "csv");
+    expect(output).not.toContain("[object Object]");
+    // The nested object value must be JSON-encoded (quoted because of commas).
+    expect(output).toMatch(/"\{""name"":""Alice""\}"/);
+  });
+
+  it("CSV output renders scalars as plain strings", () => {
+    formatExecResult({ a: 1, b: "hi" }, "csv");
+    const lines = output.trim().split("\n");
+    expect(lines).toEqual(["a,b", "1,hi"]);
+  });
 });

@@ -200,6 +200,54 @@ describe("GroupedModuleGroup.resolveGroup", () => {
 });
 
 // ---------------------------------------------------------------------------
+// resolveGroupDepth — APCORE_CLI_GROUP_DEPTH env (C-1)
+// ---------------------------------------------------------------------------
+
+describe("GroupedModuleGroup.resolveGroupDepth", () => {
+  const savedEnv = process.env.APCORE_CLI_GROUP_DEPTH;
+  afterEach(() => {
+    if (savedEnv === undefined) delete process.env.APCORE_CLI_GROUP_DEPTH;
+    else process.env.APCORE_CLI_GROUP_DEPTH = savedEnv;
+  });
+
+  it("returns explicit positive int when provided", () => {
+    expect(GroupedModuleGroup.resolveGroupDepth(3)).toBe(3);
+  });
+
+  it("falls back to APCORE_CLI_GROUP_DEPTH env when constructor arg undefined", () => {
+    process.env.APCORE_CLI_GROUP_DEPTH = "2";
+    expect(GroupedModuleGroup.resolveGroupDepth(undefined)).toBe(2);
+  });
+
+  it("prefers explicit arg over env", () => {
+    process.env.APCORE_CLI_GROUP_DEPTH = "4";
+    expect(GroupedModuleGroup.resolveGroupDepth(1)).toBe(1);
+  });
+
+  it("defaults to 1 when neither set", () => {
+    delete process.env.APCORE_CLI_GROUP_DEPTH;
+    expect(GroupedModuleGroup.resolveGroupDepth(undefined)).toBe(1);
+  });
+
+  it("ignores invalid env values (non-integer, non-positive)", () => {
+    process.env.APCORE_CLI_GROUP_DEPTH = "abc";
+    expect(GroupedModuleGroup.resolveGroupDepth(undefined)).toBe(1);
+    process.env.APCORE_CLI_GROUP_DEPTH = "0";
+    expect(GroupedModuleGroup.resolveGroupDepth(undefined)).toBe(1);
+    process.env.APCORE_CLI_GROUP_DEPTH = "-2";
+    expect(GroupedModuleGroup.resolveGroupDepth(undefined)).toBe(1);
+  });
+
+  it("affects buildGroupMap routing — depth=2 groups by first two segments", () => {
+    process.env.APCORE_CLI_GROUP_DEPTH = "2";
+    const descriptors = [makeMod("math.trig.sin"), makeMod("math.trig.cos")];
+    const group = new GroupedModuleGroup(makeRegistry(descriptors), mockExecutor);
+    expect(group.groupDepth).toBe(2);
+    expect(group.listCommands().sort()).toEqual(["math.trig"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // TestBuildGroupMap
 // ---------------------------------------------------------------------------
 

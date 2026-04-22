@@ -50,6 +50,27 @@ export function getAuditLogger(): AuditLogger | null {
   return _auditLogger;
 }
 
+/**
+ * Produce a stable, key-order-independent JSON serialization at every nesting
+ * level. Used by AuditLogger.hashInput to guarantee that logically-equal
+ * inputs hash identically (modulo salt) regardless of source key ordering,
+ * and that inputs differing only in nested fields produce distinct canonical
+ * bytes.
+ *
+ * Exported for testability — do not rely on this as a general-purpose helper;
+ * only AuditLogger's hash path is a supported caller.
+ */
+export function canonicalizeForHash(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(canonicalizeForHash);
+  const src = value as Record<string, unknown>;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(src).sort()) {
+    sorted[key] = canonicalizeForHash(src[key]);
+  }
+  return sorted;
+}
+
 export class AuditLogger {
   static readonly DEFAULT_PATH = path.join(
     os.homedir(),
@@ -58,6 +79,7 @@ export class AuditLogger {
   );
 
   private readonly logPath: string;
+  private writeFailureWarned = false;
 
   constructor(path?: string) {
     this.logPath = path ?? AuditLogger.DEFAULT_PATH;
@@ -91,14 +113,16 @@ export class AuditLogger {
     try {
       fs.appendFileSync(this.logPath, JSON.stringify(entry) + "\n");
     } catch (err) {
-      logWarn(`Could not write audit log: ${err}`);
+      if (!this.writeFailureWarned) {
+        this.writeFailureWarned = true;
+        logWarn(`Could not write audit log: ${err}`);
+      }
     }
   }
 
   private hashInput(inputData: Record<string, unknown>): string {
     const salt = crypto.randomBytes(16);
-    const sortedKeys = Object.keys(inputData).sort();
-    const payload = JSON.stringify(inputData, sortedKeys);
+    const payload = JSON.stringify(canonicalizeForHash(inputData));
     return crypto
       .createHash("sha256")
       .update(Buffer.concat([salt, Buffer.from(payload, "utf-8")]))

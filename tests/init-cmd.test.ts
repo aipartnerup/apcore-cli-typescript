@@ -144,4 +144,23 @@ describe("init module command", () => {
     const content = fs.readFileSync(pyFiles[0], "utf-8");
     expect(content).not.toContain("CLI_GROUP");
   });
+
+  // --- W-21: fs-error handling regression ---
+  it("fs write failure produces stderr error + exit code, not a raw Node stack", () => {
+    const cli = makeCli();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => { throw new Error("EXIT"); }) as never;
+    // Create a file at the target-dir path so mkdirSync recursive fails with ENOTDIR.
+    const blockedDir = path.join(tmpDir, "blocked");
+    fs.writeFileSync(blockedDir, "not a dir");
+    expect(() => cli.parse([
+      "node", "test", "init", "module", "x.y", "--dir", blockedDir,
+    ])).toThrow("EXIT");
+    expect(exitSpy).toHaveBeenCalledWith(1); // EXIT_CODES.MODULE_EXECUTE_ERROR
+    const msg = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(msg).toMatch(/Error: failed to (create directory|write file)/);
+  });
 });

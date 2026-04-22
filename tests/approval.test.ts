@@ -3,8 +3,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { checkApproval } from "../src/approval.js";
-import { ApprovalTimeoutError } from "../src/errors.js";
+import { checkApproval, CliApprovalHandler } from "../src/approval.js";
+import { ApprovalDeniedError, ApprovalTimeoutError } from "../src/errors.js";
 import type { ModuleDescriptor } from "../src/cli.js";
 
 describe("checkApproval", () => {
@@ -49,13 +49,10 @@ describe("checkApproval", () => {
   it("logs warning when APCORE_CLI_AUTO_APPROVE is invalid", async () => {
     process.env.APCORE_CLI_AUTO_APPROVE = "yes";
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("exit");
-    });
-    // stdin not TTY → will exit 46
+    // stdin not TTY → will throw ApprovalDeniedError (caller handles exit)
     Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
 
-    await expect(checkApproval(makeMod(true), false)).rejects.toThrow("exit");
+    await expect(checkApproval(makeMod(true), false)).rejects.toBeInstanceOf(ApprovalDeniedError);
     expect(stderrSpy).toHaveBeenCalledWith(
       expect.stringContaining("APCORE_CLI_AUTO_APPROVE is set to 'yes'"),
     );
@@ -84,34 +81,18 @@ describe("checkApproval", () => {
 
   // ---- Task 2: Non-TTY rejection ----
 
-  it("exits 46 when stdin is not a TTY", async () => {
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("exit");
-    });
-    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  it("throws ApprovalDeniedError when stdin is not a TTY (caller handles exit via exitCodeForError)", async () => {
     Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
-
-    await expect(checkApproval(makeMod(true), false)).rejects.toThrow("exit");
-    expect(exitSpy).toHaveBeenCalledWith(46);
-
+    await expect(checkApproval(makeMod(true), false)).rejects.toBeInstanceOf(ApprovalDeniedError);
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
   });
 
-  it("outputs helpful error message for non-TTY", async () => {
-    vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("exit");
-    });
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  it("ApprovalDeniedError for non-TTY carries a helpful message (--yes / APCORE_CLI_AUTO_APPROVE=1)", async () => {
     Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
-
-    await expect(checkApproval(makeMod(true), false)).rejects.toThrow("exit");
-    expect(stderrSpy).toHaveBeenCalledWith(
-      expect.stringContaining("--yes"),
-    );
-    expect(stderrSpy).toHaveBeenCalledWith(
-      expect.stringContaining("APCORE_CLI_AUTO_APPROVE=1"),
-    );
-
+    const err = await checkApproval(makeMod(true), false).catch((e) => e);
+    expect(err).toBeInstanceOf(ApprovalDeniedError);
+    expect(err.message).toContain("--yes");
+    expect(err.message).toContain("APCORE_CLI_AUTO_APPROVE=1");
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
   });
 
@@ -121,5 +102,45 @@ describe("checkApproval", () => {
     const err = new ApprovalTimeoutError();
     expect(err.name).toBe("ApprovalTimeoutError");
     expect(err).toBeInstanceOf(Error);
+  });
+});
+
+describe("CliApprovalHandler — APCORE_CLI_APPROVAL_TIMEOUT env (C-1)", () => {
+  const savedEnv = process.env.APCORE_CLI_APPROVAL_TIMEOUT;
+  afterEach(() => {
+    if (savedEnv === undefined) delete process.env.APCORE_CLI_APPROVAL_TIMEOUT;
+    else process.env.APCORE_CLI_APPROVAL_TIMEOUT = savedEnv;
+  });
+
+  it("uses explicit constructor timeout when provided", () => {
+    process.env.APCORE_CLI_APPROVAL_TIMEOUT = "999";
+    const handler = new CliApprovalHandler(false, 30);
+    expect(handler.timeout).toBe(30);
+  });
+
+  it("falls back to APCORE_CLI_APPROVAL_TIMEOUT when constructor timeout undefined", () => {
+    process.env.APCORE_CLI_APPROVAL_TIMEOUT = "120";
+    const handler = new CliApprovalHandler(false);
+    expect(handler.timeout).toBe(120);
+  });
+
+  it("defaults to 60 when neither set", () => {
+    delete process.env.APCORE_CLI_APPROVAL_TIMEOUT;
+    const handler = new CliApprovalHandler(false);
+    expect(handler.timeout).toBe(60);
+  });
+
+  it("ignores invalid env values", () => {
+    process.env.APCORE_CLI_APPROVAL_TIMEOUT = "abc";
+    expect(new CliApprovalHandler(false).timeout).toBe(60);
+    process.env.APCORE_CLI_APPROVAL_TIMEOUT = "0";
+    expect(new CliApprovalHandler(false).timeout).toBe(60);
+    process.env.APCORE_CLI_APPROVAL_TIMEOUT = "-5";
+    expect(new CliApprovalHandler(false).timeout).toBe(60);
+  });
+
+  it("clamps to [1, 3600] range", () => {
+    process.env.APCORE_CLI_APPROVAL_TIMEOUT = "99999";
+    expect(new CliApprovalHandler(false).timeout).toBe(3600);
   });
 });

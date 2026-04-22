@@ -5,6 +5,27 @@
 import { Command } from "commander";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { EXIT_CODES } from "./errors.js";
+
+/**
+ * Wrap a filesystem operation and exit with MODULE_EXECUTE_ERROR on failure.
+ * Unwrapped mkdirSync/writeFileSync would surface raw Node stack traces to the
+ * user; this helper funnels them through the CLI's standard stderr/exit path.
+ */
+function runFsOp<T>(op: string, targetPath: string, fn: () => T, partial?: string[]): T {
+  try {
+    return fn();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`Error: failed to ${op} ${targetPath}: ${msg}\n`);
+    if (partial && partial.length > 0) {
+      process.stderr.write(
+        `  Partial scaffold left on disk — you may want to remove: ${partial.join(", ")}\n`,
+      );
+    }
+    process.exit(EXIT_CODES.MODULE_EXECUTE_ERROR);
+  }
+}
 
 const DECORATOR_TEMPLATE = `\
 import { module } from "apcore-js";
@@ -110,7 +131,7 @@ function createDecoratorModule(
   description: string,
   outputDir: string,
 ): void {
-  fs.mkdirSync(outputDir, { recursive: true });
+  runFsOp("create directory", outputDir, () => fs.mkdirSync(outputDir, { recursive: true }));
   const filename = moduleId.replace(/\./g, "_") + ".ts";
   const filepath = path.join(outputDir, filename);
 
@@ -121,7 +142,7 @@ function createDecoratorModule(
     funcName,
     description,
   });
-  fs.writeFileSync(filepath, content);
+  runFsOp("write file", filepath, () => fs.writeFileSync(filepath, content));
   process.stdout.write(`Created ${filepath}\n`);
 }
 
@@ -137,7 +158,7 @@ function createConventionModule(
   const dirPath = prefixParts.length > 1
     ? path.join(outputDir, ...prefixParts.slice(0, -1))
     : outputDir;
-  fs.mkdirSync(dirPath, { recursive: true });
+  runFsOp("create directory", dirPath, () => fs.mkdirSync(dirPath, { recursive: true }));
 
   let filename: string;
   if (prefixParts.length > 1) {
@@ -160,7 +181,7 @@ function createConventionModule(
     description,
     cliGroupLine,
   });
-  fs.writeFileSync(filepath, content);
+  runFsOp("write file", filepath, () => fs.writeFileSync(filepath, content));
   process.stdout.write(`Created ${filepath}\n`);
 }
 
@@ -171,7 +192,8 @@ function createBindingModule(
   description: string,
   outputDir: string,
 ): void {
-  fs.mkdirSync(outputDir, { recursive: true });
+  const partial: string[] = [];
+  runFsOp("create directory", outputDir, () => fs.mkdirSync(outputDir, { recursive: true }));
 
   const yamlFile = path.join(outputDir, moduleId.replace(/\./g, "_") + ".binding.yaml");
   const target = `commands.${prefix}:${funcName}`;
@@ -181,12 +203,13 @@ function createBindingModule(
     target,
     description,
   });
-  fs.writeFileSync(yamlFile, yamlContent);
+  runFsOp("write file", yamlFile, () => fs.writeFileSync(yamlFile, yamlContent));
+  partial.push(yamlFile);
   process.stdout.write(`Created ${yamlFile}\n`);
 
   // Also create the target function file
   const baseSrc = "commands";
-  fs.mkdirSync(baseSrc, { recursive: true });
+  runFsOp("create directory", baseSrc, () => fs.mkdirSync(baseSrc, { recursive: true }), partial);
   const srcFile = path.join(baseSrc, prefix.replace(/\./g, "_") + ".ts");
   if (!fs.existsSync(srcFile)) {
     const srcContent =
@@ -195,7 +218,7 @@ function createBindingModule(
       "  // TODO: implement\n" +
       '  return { status: "ok" };\n' +
       "}\n";
-    fs.writeFileSync(srcFile, srcContent);
+    runFsOp("write file", srcFile, () => fs.writeFileSync(srcFile, srcContent), partial);
     process.stdout.write(`Created ${srcFile}\n`);
   }
 }

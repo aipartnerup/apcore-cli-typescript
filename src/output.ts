@@ -4,7 +4,20 @@
  * Protocol spec: Output formatting (FE-09 enhanced)
  */
 
+import yaml from "js-yaml";
+import { EXIT_CODES } from "./errors.js";
 import type { ModuleDescriptor, PreflightResult } from "./cli.js";
+
+/**
+ * Stringify a CSV cell value: scalars via String(), nested objects/arrays via
+ * JSON.stringify so composite data survives a round-trip instead of rendering
+ * as '[object Object]'.
+ */
+function csvCellString(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -271,42 +284,23 @@ export function formatExecResult(
       const obj = effective_result as Record<string, unknown>;
       const keys = Object.keys(obj);
       const header = keys.map(escapeCsvField).join(",");
-      const row = keys.map((k) => escapeCsvField(String(obj[k]))).join(",");
+      const row = keys.map((k) => escapeCsvField(csvCellString(obj[k]))).join(",");
       process.stdout.write(header + "\n" + row + "\n");
     } else if (Array.isArray(effective_result) && effective_result.length > 0 && typeof effective_result[0] === "object") {
       const keys = Object.keys(effective_result[0] as Record<string, unknown>);
       const header = keys.map(escapeCsvField).join(",");
       const rows = effective_result.map((item) => {
         const obj = item as Record<string, unknown>;
-        return keys.map((k) => escapeCsvField(String(obj[k]))).join(",");
+        return keys.map((k) => escapeCsvField(csvCellString(obj[k]))).join(",");
       });
       process.stdout.write(header + "\n" + rows.join("\n") + "\n");
     } else {
       process.stdout.write(JSON.stringify(effective_result) + "\n");
     }
   } else if (effective === "yaml") {
-    // Simple YAML-like output (no dependency required)
-    if (typeof effective_result === "object" && !Array.isArray(effective_result) && effective_result !== null) {
-      const obj = effective_result as Record<string, unknown>;
-      const lines = Object.entries(obj).map(([k, v]) => {
-        if (v === null || v === undefined) return `${k}: null`;
-        if (typeof v === "object") return `${k}: ${JSON.stringify(v)}`;
-        return `${k}: ${v}`;
-      });
-      process.stdout.write(lines.join("\n") + "\n");
-    } else if (Array.isArray(effective_result)) {
-      for (const item of effective_result) {
-        if (typeof item === "object" && item !== null) {
-          const obj = item as Record<string, unknown>;
-          const lines = Object.entries(obj).map(([k, v]) => `  ${k}: ${v}`);
-          process.stdout.write("- " + lines.join("\n  ") + "\n");
-        } else {
-          process.stdout.write(`- ${item}\n`);
-        }
-      }
-    } else {
-      process.stdout.write(String(effective_result) + "\n");
-    }
+    // Use js-yaml to produce spec-conformant output for values containing
+    // special YAML characters (':', leading '-', '@', '#', CR/LF, etc.).
+    process.stdout.write(yaml.dump(effective_result, { lineWidth: -1 }));
   } else if (effective === "jsonl") {
     if (Array.isArray(effective_result)) {
       for (const item of effective_result) {
@@ -338,7 +332,7 @@ export function formatExecResult(
  * Escape a CSV field value — wrap in quotes if it contains comma, quote, or newline.
  */
 function escapeCsvField(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+  if (value.includes(",") || value.includes('"') || value.includes("\n") || value.includes("\r")) {
     return '"' + value.replace(/"/g, '""') + '"';
   }
   return value;
@@ -410,19 +404,21 @@ export function formatPreflightResult(result: PreflightResult, format?: string):
  * Return the exit code for the first failed check in a PreflightResult.
  */
 export function firstFailedExitCode(result: PreflightResult): number {
+  // Map preflight-check names (apcore-js PROTOCOL_SPEC) to CLI exit codes.
+  // Symbolic references so renumbering in errors.ts EXIT_CODES stays in sync.
   const checkToExit: Record<string, number> = {
-    module_id: 2,
-    module_lookup: 44,
-    call_chain: 1,
-    acl: 77,
-    schema: 45,
-    approval: 46,
-    module_preflight: 1,
+    module_id: EXIT_CODES.INVALID_CLI_INPUT,
+    module_lookup: EXIT_CODES.MODULE_NOT_FOUND,
+    call_chain: EXIT_CODES.MODULE_EXECUTE_ERROR,
+    acl: EXIT_CODES.ACL_DENIED,
+    schema: EXIT_CODES.SCHEMA_VALIDATION_ERROR,
+    approval: EXIT_CODES.APPROVAL_DENIED,
+    module_preflight: EXIT_CODES.MODULE_EXECUTE_ERROR,
   };
   for (const check of result.checks) {
     if (!check.passed) {
-      return checkToExit[check.check] ?? 1;
+      return checkToExit[check.check] ?? EXIT_CODES.MODULE_EXECUTE_ERROR;
     }
   }
-  return 1;
+  return EXIT_CODES.MODULE_EXECUTE_ERROR;
 }

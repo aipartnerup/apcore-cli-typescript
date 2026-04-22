@@ -70,6 +70,48 @@ function hasVerboseFlag(): boolean {
   return process.argv.includes("--verbose");
 }
 
+/**
+ * Resolve a positive-integer option: CLI flag > env var > default.
+ * Invalid env values (non-integer, zero, negative) are ignored with a warning
+ * so users aren't silently downgraded to the default.
+ */
+export function resolveIntOption(
+  cliValue: number | undefined,
+  envValue: string | undefined,
+  defaultValue: number,
+): number {
+  if (cliValue !== undefined && Number.isFinite(cliValue) && cliValue > 0) {
+    return cliValue;
+  }
+  if (envValue !== undefined && envValue !== "") {
+    const parsed = parseInt(envValue, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+    process.stderr.write(
+      `Warning: invalid integer env value '${envValue}'; using default ${defaultValue}.\n`,
+    );
+  }
+  return defaultValue;
+}
+
+/**
+ * Resolve a string option: CLI flag > env var > undefined.
+ * Empty strings are treated as absent.
+ */
+export function resolveStringOption(
+  cliValue: unknown,
+  envValue: string | undefined,
+): string | undefined {
+  if (typeof cliValue === "string" && cliValue !== "") {
+    return cliValue;
+  }
+  if (envValue !== undefined && envValue !== "") {
+    return envValue;
+  }
+  return undefined;
+}
+
 let VERSION = "0.0.0";
 try {
   const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "../package.json"), "utf-8"));
@@ -927,8 +969,12 @@ export function buildModuleCommand(
     const dryRun = options.dryRun as boolean;
     const traceFlag = options.trace as boolean;
     const streamFlag = options.stream as boolean;
-    const strategyName = options.strategy as string | undefined;
-    const approvalTimeout = (options.approvalTimeout as number | undefined) ?? 60;
+    const strategyName = resolveStringOption(options.strategy, process.env.APCORE_CLI_STRATEGY);
+    const approvalTimeout = resolveIntOption(
+      options.approvalTimeout as number | undefined,
+      process.env.APCORE_CLI_APPROVAL_TIMEOUT,
+      60,
+    );
     const approvalToken = options.approvalToken as string | undefined;
 
     // Remove built-in keys from options to get schema kwargs
@@ -1204,43 +1250,52 @@ export async function collectInput(
     return cliKwargsNonNull;
   }
 
+  let raw: string;
+  let source: string;
   if (stdinFlag === "-") {
-    const raw = await readStdin();
-    const rawSize = Buffer.byteLength(raw, "utf-8");
-
-    if (rawSize > 10_485_760 && !largeInput) {
-      process.stderr.write(
-        "Error: STDIN input exceeds 10MB limit. Use --large-input to override.\n",
-      );
-      process.exit(EXIT_CODES.INVALID_CLI_INPUT);
-    }
-
-    if (!raw) {
-      return cliKwargsNonNull;
-    }
-
-    let stdinData: unknown;
+    raw = await readStdin();
+    source = "STDIN";
+  } else {
+    // File-path source (help text: "JSON input file or '-' for stdin")
+    source = `file '${stdinFlag}'`;
     try {
-      stdinData = JSON.parse(raw);
-    } catch {
-      process.stderr.write(
-        "Error: STDIN does not contain valid JSON.\n",
-      );
+      raw = readFileSync(stdinFlag, "utf-8");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`Error: Could not read input ${source}: ${msg}\n`);
       process.exit(EXIT_CODES.INVALID_CLI_INPUT);
     }
-
-    if (typeof stdinData !== "object" || stdinData === null || Array.isArray(stdinData)) {
-      process.stderr.write(
-        `Error: STDIN JSON must be an object, got ${Array.isArray(stdinData) ? "array" : typeof stdinData}.\n`,
-      );
-      process.exit(EXIT_CODES.INVALID_CLI_INPUT);
-    }
-
-    // CLI flags override STDIN for duplicate keys
-    return { ...(stdinData as Record<string, unknown>), ...cliKwargsNonNull };
   }
 
-  return cliKwargsNonNull;
+  const rawSize = Buffer.byteLength(raw, "utf-8");
+  if (rawSize > 10_485_760 && !largeInput) {
+    process.stderr.write(
+      `Error: ${source} input exceeds 10MB limit. Use --large-input to override.\n`,
+    );
+    process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+  }
+
+  if (!raw) {
+    return cliKwargsNonNull;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    process.stderr.write(`Error: ${source} does not contain valid JSON.\n`);
+    process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    process.stderr.write(
+      `Error: ${source} JSON must be an object, got ${Array.isArray(parsed) ? "array" : typeof parsed}.\n`,
+    );
+    process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+  }
+
+  // CLI flags override stdin/file for duplicate keys
+  return { ...(parsed as Record<string, unknown>), ...cliKwargsNonNull };
 }
 
 /**

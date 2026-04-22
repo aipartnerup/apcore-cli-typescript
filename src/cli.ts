@@ -322,10 +322,37 @@ export class GroupedModuleGroup extends LazyModuleGroup {
   private groupMapBuilt = false;
   /** Exposure filter (FE-12) — controls which modules appear as CLI commands */
   exposureFilter: ExposureFilter;
+  /** Effective group depth (CLAUDE.md v0.6.0): constructor arg > APCORE_CLI_GROUP_DEPTH env > 1. */
+  readonly groupDepth: number;
 
-  constructor(registry: Registry, executor: Executor, helpTextMaxLength = 1000, exposureFilter?: ExposureFilter) {
+  constructor(
+    registry: Registry,
+    executor: Executor,
+    helpTextMaxLength = 1000,
+    exposureFilter?: ExposureFilter,
+    groupDepth?: number,
+  ) {
     super(registry, executor, helpTextMaxLength);
     this.exposureFilter = exposureFilter ?? new ExposureFilter();
+    this.groupDepth = GroupedModuleGroup.resolveGroupDepth(groupDepth);
+  }
+
+  /**
+   * Resolve group depth from constructor arg > APCORE_CLI_GROUP_DEPTH env > default 1.
+   * Invalid env values (non-integer, non-positive) fall through to the default.
+   */
+  static resolveGroupDepth(explicit: number | undefined): number {
+    if (explicit !== undefined && Number.isFinite(explicit) && explicit > 0) {
+      return Math.floor(explicit);
+    }
+    const raw = process.env.APCORE_CLI_GROUP_DEPTH;
+    if (raw !== undefined && raw !== "") {
+      const parsed = parseInt(raw, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    return 1;
   }
 
   /**
@@ -404,7 +431,7 @@ export class GroupedModuleGroup extends LazyModuleGroup {
         assertNotReserved("group", explicitGroup, moduleId);
       }
 
-      const [group, cmd] = GroupedModuleGroup.resolveGroup(moduleId, cached);
+      const [group, cmd] = GroupedModuleGroup.resolveGroup(moduleId, cached, this.groupDepth);
       if (group !== null && explicitGroup === undefined) {
         // Auto-grouped (e.g. `apcli.foo` → group=`apcli`).
         assertNotReserved("auto-group", group, moduleId);
@@ -412,7 +439,7 @@ export class GroupedModuleGroup extends LazyModuleGroup {
       if (group === null) {
         assertNotReserved("top-level", cmd, moduleId);
         this.topLevelModules.set(cmd, [moduleId, cached]);
-      } else if (!/^[a-z][a-z0-9_-]*$/.test(group)) {
+      } else if (!/^[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)*$/.test(group)) {
         warn(
           `Module '${moduleId}': group name '${group}' is not shell-safe — treating as top-level.`,
         );

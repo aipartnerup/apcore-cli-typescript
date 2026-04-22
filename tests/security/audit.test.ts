@@ -6,7 +6,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { AuditLogger, setAuditLogger, getAuditLogger } from "../../src/security/audit.js";
+import {
+  AuditLogger,
+  canonicalizeForHash,
+  setAuditLogger,
+  getAuditLogger,
+} from "../../src/security/audit.js";
 
 describe("AuditLogger", () => {
   let tmpDir: string;
@@ -57,6 +62,20 @@ describe("AuditLogger", () => {
     expect(hash1).not.toBe(hash2);
   });
 
+  it("emits only one 'could not write audit log' warning per logger instance", () => {
+    // Regression: unwritable FS previously emitted WARNING per call; one-shot flag now applies.
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const logger = new AuditLogger("/nonexistent/path/audit.jsonl");
+    logger.logExecution("mod", {}, "error", 1, 0);
+    logger.logExecution("mod", {}, "error", 1, 0);
+    logger.logExecution("mod", {}, "error", 1, 0);
+    const matches = stderrSpy.mock.calls
+      .map((c) => String(c[0]))
+      .filter((s) => /WARNING: Could not write audit log/.test(s));
+    expect(matches.length).toBe(1);
+    stderrSpy.mockRestore();
+  });
+
   it("handles write errors gracefully", () => {
     // Warnings now flow through ./logger.js (stderr) per review fix #4, not console.warn.
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -76,6 +95,42 @@ describe("AuditLogger", () => {
     // Regression: A-002 — param name must match spec canonical name
     const logger = new AuditLogger(logPath);
     expect(logger).toBeInstanceOf(AuditLogger);
+  });
+});
+
+describe("canonicalizeForHash", () => {
+  it("preserves top-level scalars and order-sorts keys", () => {
+    const out = canonicalizeForHash({ b: 2, a: 1, c: 3 });
+    expect(JSON.stringify(out)).toBe('{"a":1,"b":2,"c":3}');
+  });
+
+  it("recursively preserves nested fields (regression: replacer-array bug)", () => {
+    // Previously: JSON.stringify({a:1,b:{x:1,y:2}}, ["a","b"]) → '{"a":1,"b":{}}'
+    // Canonical form must keep the nested fields at every level.
+    const out = canonicalizeForHash({ a: 1, b: { x: 1, y: 2 } });
+    expect(JSON.stringify(out)).toBe('{"a":1,"b":{"x":1,"y":2}}');
+  });
+
+  it("produces identical output regardless of key order at every nesting level", () => {
+    const a = canonicalizeForHash({ a: 1, b: { x: 1, y: 2 } });
+    const b = canonicalizeForHash({ b: { y: 2, x: 1 }, a: 1 });
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it("produces distinct output for inputs differing only in nested values", () => {
+    const a = canonicalizeForHash({ a: 1, b: { x: 1, y: 2 } });
+    const b = canonicalizeForHash({ a: 1, b: { x: 999, y: 999 } });
+    expect(JSON.stringify(a)).not.toBe(JSON.stringify(b));
+  });
+
+  it("preserves arrays without sorting their elements", () => {
+    const out = canonicalizeForHash({ xs: [3, 1, 2] });
+    expect(JSON.stringify(out)).toBe('{"xs":[3,1,2]}');
+  });
+
+  it("canonicalizes objects inside arrays", () => {
+    const out = canonicalizeForHash({ xs: [{ b: 2, a: 1 }] });
+    expect(JSON.stringify(out)).toBe('{"xs":[{"a":1,"b":2}]}');
   });
 });
 
