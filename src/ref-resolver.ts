@@ -93,6 +93,15 @@ function resolveNode(
       properties: {},
       required: [] as string[],
     };
+    // Seed parent node's own properties/required BEFORE merging branches,
+    // so sibling fields are not silently dropped when a parent mixes
+    // top-level `properties` with `allOf` branches.
+    if (typeof obj.properties === "object" && obj.properties !== null) {
+      Object.assign(merged.properties as Record<string, unknown>, obj.properties);
+    }
+    if (Array.isArray(obj.required)) {
+      (merged.required as string[]).push(...(obj.required as string[]));
+    }
     for (const subSchema of obj.allOf as unknown[]) {
       const resolved = resolveNode(
         subSchema,

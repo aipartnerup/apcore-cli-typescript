@@ -1066,13 +1066,6 @@ export function buildModuleCommand(
         );
         const durationMs = Math.round(performance.now() - startTime);
 
-        // Audit log (success)
-        const { getAuditLogger } = await import("./security/audit.js");
-        const auditLogger = getAuditLogger();
-        if (auditLogger) {
-          auditLogger.logExecution(moduleId, merged, "success", 0, durationMs);
-        }
-
         // Print result
         const resolved = resolveFormat(outputFormat);
         if (resolved === "json" || !process.stdout.isTTY) {
@@ -1114,6 +1107,12 @@ export function buildModuleCommand(
             }
           }
         }
+        // Audit log AFTER format (canonical ordering: format \u2192 audit on success)
+        const { getAuditLogger: getAL2 } = await import("./security/audit.js");
+        const al2 = getAL2();
+        if (al2) {
+          al2.logExecution(moduleId, merged, "success", 0, durationMs);
+        }
         return;
       }
 
@@ -1137,25 +1136,27 @@ export function buildModuleCommand(
       }
       const durationMs = Math.round(performance.now() - startTime);
 
-      // 5. Audit log (success)
+      // 5. Format and print result first (canonical order: format → audit)
+      formatExecResult(result, outputFormat, outputFields);
+
+      // 6. Audit log (success) — called AFTER format so formatter exceptions
+      //    suppress the success entry (matches Python canonical ordering).
       const { getAuditLogger } = await import("./security/audit.js");
       const auditLogger = getAuditLogger();
       if (auditLogger) {
         auditLogger.logExecution(moduleId, merged, "success", 0, durationMs);
       }
-
-      // 6. Format and print result
-      formatExecResult(result, outputFormat, outputFields);
     } catch (err: unknown) {
       // Enhanced error output (F3)
       const exitCode = exitCodeForError(err);
+      const durationMs = Math.round(performance.now() - startTime);
 
-      // Audit log (error)
+      // Audit log (error) with real elapsed duration_ms
       try {
         const { getAuditLogger } = await import("./security/audit.js");
         const auditLogger = getAuditLogger();
         if (auditLogger) {
-          auditLogger.logExecution(moduleId, merged, "error", exitCode, 0);
+          auditLogger.logExecution(moduleId, merged, "error", exitCode, durationMs);
         }
       } catch {
         // Ignore audit failures during error handling

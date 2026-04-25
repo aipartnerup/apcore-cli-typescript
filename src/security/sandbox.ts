@@ -17,6 +17,8 @@ import { ModuleExecutionError } from "../errors.js";
 const SANDBOX_ALLOW_KEYS = ["PATH", "LANG", "LC_ALL"];
 const SANDBOX_ALLOW_PREFIX = "APCORE_";
 const SANDBOX_DENY_PREFIX = "APCORE_AUTH_";
+// Explicit deny-list for known credential keys (defense-in-depth mirroring Rust).
+const SANDBOX_DENY_KEYS: readonly string[] = ["APCORE_AUTH_API_KEY"];
 
 const SANDBOX_OUTPUT_SIZE_LIMIT = 64 * 1024 * 1024; // 64 MiB
 
@@ -194,7 +196,11 @@ function buildSandboxEnv(tmpDir: string): NodeJS.ProcessEnv {
     if (process.env[key]) env[key] = process.env[key];
   }
   for (const [key, val] of Object.entries(process.env)) {
-    if (key.startsWith(SANDBOX_ALLOW_PREFIX) && !key.startsWith(SANDBOX_DENY_PREFIX)) {
+    if (
+      key.startsWith(SANDBOX_ALLOW_PREFIX) &&
+      !key.startsWith(SANDBOX_DENY_PREFIX) &&
+      !(SANDBOX_DENY_KEYS as readonly string[]).includes(key)
+    ) {
       env[key] = val;
     }
   }

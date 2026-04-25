@@ -263,6 +263,11 @@ export function registerExecCommand(
       "Seconds to wait for interactive approval.",
       parseInt,
     )
+    .option("--sandbox", "Run module in an isolated subprocess with restricted env.", false)
+    .option("--strategy <name>", "Execution strategy (standard, parallel, sequential, etc.).")
+    .option("--trace", "Enable pipeline trace output.", false)
+    .option("--dry-run", "Validate inputs without executing the module.", false)
+    .option("--stream", "Stream output as JSONL instead of buffering.", false)
     .action(async (
       moduleId: string,
       opts: {
@@ -271,6 +276,11 @@ export function registerExecCommand(
         input?: string;
         yes: boolean;
         approvalTimeout?: number;
+        sandbox: boolean;
+        strategy?: string;
+        trace: boolean;
+        dryRun: boolean;
+        stream: boolean;
       },
     ) => {
       validateModuleId(moduleId);
@@ -291,9 +301,7 @@ export function registerExecCommand(
         try {
           const parsed = JSON.parse(opts.input);
           if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-            process.stderr.write(
-              "Error: --input JSON must be an object.\n",
-            );
+            process.stderr.write("Error: --input JSON must be an object.\n");
             process.exit(EXIT_CODES.INVALID_CLI_INPUT);
           }
           merged = parsed as Record<string, unknown>;
@@ -304,27 +312,48 @@ export function registerExecCommand(
         }
       }
 
-      // Apply the same policy gates as buildModuleCommand (main.ts): approval
-      // check before dispatch, audit log success/error. Sandbox wiring is
-      // omitted here because apcli exec has no --sandbox flag; callers that
-      // need sandbox isolation invoke the per-module dispatch path instead.
       const startTime = performance.now();
       try {
         await checkApproval(moduleDef, opts.yes, opts.approvalTimeout);
-        const result = await executor.execute(moduleId, merged);
+
+        // --dry-run: validate without executing
+        if (opts.dryRun) {
+          if (executor.validate) {
+            const preflight = await executor.validate(moduleId, merged);
+            formatPreflightResult(preflight, opts.format);
+          } else {
+            process.stdout.write(JSON.stringify({ valid: true }) + "\n");
+          }
+          return;
+        }
+
+        let result: unknown;
+        if (opts.strategy && executor.callWithTrace) {
+          const [res] = await executor.callWithTrace(moduleId, merged, { strategy: opts.strategy });
+          result = res;
+        } else {
+          const { Sandbox } = await import("./security/index.js");
+          const sandbox = new Sandbox(opts.sandbox);
+          result = await sandbox.execute(moduleId, merged, executor);
+        }
         const durationMs = Math.round(performance.now() - startTime);
+
+        // Format output first (canonical ordering: format → audit on success)
+        const fmt = resolveFormat(opts.format);
+        formatExecResult(result, fmt, opts.fields);
+
+        // Audit success AFTER format so a formatter exception suppresses the entry
         const auditLogger = getAuditLogger();
         if (auditLogger) {
           auditLogger.logExecution(moduleId, merged, "success", 0, durationMs);
         }
-        const fmt = resolveFormat(opts.format);
-        formatExecResult(result, fmt, opts.fields);
       } catch (err: unknown) {
         const exitCode = exitCodeForError(err);
+        const durationMs = Math.round(performance.now() - startTime);
         try {
           const auditLogger = getAuditLogger();
           if (auditLogger) {
-            auditLogger.logExecution(moduleId, merged, "error", exitCode, 0);
+            auditLogger.logExecution(moduleId, merged, "error", exitCode, durationMs);
           }
         } catch {
           // Ignore audit failures during error handling

@@ -75,7 +75,7 @@ export class ExposureFilter {
     if (this._mode === "exclude") {
       return !this._compiledExclude.some((rx) => rx.test(moduleId));
     }
-    return true;
+    return false;
   }
 
   /** Partition moduleIds into [exposed, hidden] lists. */
