@@ -93,6 +93,14 @@ export function schemaToCliOptions(
   for (const [propName, propSchema] of Object.entries(properties)) {
     const flagName = "--" + propName.replace(/_/g, "-");
 
+    // Reserved name check (must precede collision check to match Python/Rust)
+    if (RESERVED_NAMES.has(propName)) {
+      process.stderr.write(
+        `Error: Module schema property '${propName}' conflicts with a reserved CLI option name. Rename the property.\n`,
+      );
+      process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+    }
+
     // Collision detection
     if (flagName in flagNames) {
       process.stderr.write(
@@ -101,14 +109,6 @@ export function schemaToCliOptions(
       process.exit(EXIT_CODES.INVALID_CLI_INPUT);
     }
     flagNames[flagName] = propName;
-
-    // Reserved name check
-    if (RESERVED_NAMES.has(propName)) {
-      process.stderr.write(
-        `Error: Module schema property '${propName}' conflicts with a reserved CLI option name. Rename the property.\n`,
-      );
-      process.exit(EXIT_CODES.INVALID_CLI_INPUT);
-    }
 
     const typeResult = mapType(propName, propSchema);
     const isRequired = requiredList.includes(propName);

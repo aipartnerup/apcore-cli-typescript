@@ -278,6 +278,34 @@ describe("schemaToCliOptions()", () => {
     ).toThrow("exit");
     expect(exitSpy).toHaveBeenCalledWith(2);
   });
+
+  // D11-004: reserved-name check must precede collision check
+  // (matches Python schema_parser.py:100 and Rust schema_parser.rs:226 ordering)
+  it("checks reserved name BEFORE flag collision when both apply", () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("exit");
+    });
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    // Property "dry-run" canonicalizes to --dry-run.
+    // Property "dry_run" ALSO canonicalizes to --dry-run (collision)
+    // AND is itself a reserved name. The reserved-name diagnostic must win.
+    expect(() =>
+      schemaToCliOptions({
+        properties: {
+          "dry-run": { type: "string" },
+          dry_run: { type: "boolean" },
+        },
+      }),
+    ).toThrow("exit");
+    expect(exitSpy).toHaveBeenCalledWith(2);
+
+    const messages = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(messages).toContain("reserved");
+    expect(messages).not.toMatch(/collision|both map to/i);
+  });
 });
 
 describe("reconvertEnumValues()", () => {
