@@ -87,8 +87,12 @@ export class AuditLogger {
   }
 
   private ensureDirectory(): void {
+    const dir = path.dirname(this.logPath);
     try {
-      fs.mkdirSync(path.dirname(this.logPath), { recursive: true });
+      fs.mkdirSync(dir, { recursive: true });
+      // Restrict to owner-only on Unix so audit log is not enumerable by
+      // other local UIDs on shared systems (mirrors Rust's 0o700 hardening).
+      try { fs.chmodSync(dir, 0o700); } catch { /* best-effort */ }
     } catch {
       // Silently ignore — we'll handle write errors in logExecution
     }
@@ -112,6 +116,8 @@ export class AuditLogger {
     };
     try {
       fs.appendFileSync(this.logPath, JSON.stringify(entry) + "\n");
+      // Restrict to owner read/write (mirrors Rust's 0o600 hardening).
+      try { fs.chmodSync(this.logPath, 0o600); } catch { /* best-effort */ }
     } catch (err) {
       if (!this.writeFailureWarned) {
         this.writeFailureWarned = true;

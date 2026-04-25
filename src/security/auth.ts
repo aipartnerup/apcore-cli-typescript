@@ -67,7 +67,15 @@ export class AuthProvider {
           "Set --api-key, APCORE_AUTH_API_KEY, or auth.api_key in config.",
       );
     }
-    return { ...headers, Authorization: `Bearer ${key}` };
+    // Reject keys with CR/LF — a stray clipboard newline produces a confusing
+    // HTTP error; failing early with a clear message is safer.
+    if (/[\r\n]/.test(key)) {
+      throw new AuthenticationError(
+        "Malformed API key: contains invalid characters (CR/LF). " +
+          "Re-configure with 'apcore-cli config set auth.api_key'.",
+      );
+    }
+    return { ...headers, Authorization: `Bearer ${key.trim()}` };
   }
 
   /**
