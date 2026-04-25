@@ -968,6 +968,7 @@ export function buildModuleCommand(
     }
 
     let merged: Record<string, unknown> = {};
+    const startTime = performance.now();
 
     try {
       // 1. Collect and merge input
@@ -1016,7 +1017,6 @@ export function buildModuleCommand(
       await checkApproval(moduleDef, autoApprove, approvalTimeout);
 
       // 4. Execute with timing
-      const startTime = performance.now();
 
       // -- Streaming execution (F6) --
       if (streamFlag) {
