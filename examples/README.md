@@ -1,7 +1,7 @@
 # apcore-cli-typescript Examples
 
-This directory mirrors `apcore-cli-python/examples/` and `apcore-cli-rust/examples/`
-to provide reference module implementations across the three CLI ports.
+This directory provides reference module implementations for the TypeScript CLI port,
+mirroring `apcore-cli-python/examples/` and `apcore-cli-rust/examples/`.
 
 ## Layout
 
@@ -30,6 +30,24 @@ Each module exports a class with:
   to JSON Schema for the apcore-js Module API.
 - `execute(inputs)` — synchronous handler returning an `Output`.
 
+## Running the examples
+
+`examples/run-examples.ts` is the TypeScript e2e runner for this SDK. It exercises all 8 example
+modules across 16 scenarios (including STDIN piping and module chaining) and
+verifies outputs, so it can be used as a CI smoke test.
+
+```bash
+# One-off
+npx tsx examples/run-examples.ts
+
+# Via npm script
+pnpm run-examples
+```
+
+Scenarios 15 (shell completion) and 16 (module help) note that they require a
+compiled CLI binary and a live apcore-js registry — those steps are skipped
+with an inline message rather than a hard failure.
+
 ## Type-checking the examples
 
 The main `tsconfig.json` excludes the `examples/` tree to keep the published
@@ -39,7 +57,7 @@ build minimal. To type-check the example modules in isolation:
 npx tsc --noEmit -p tsconfig.examples.json
 ```
 
-## Future work
+## Known gap
 
 The apcore-js Module API is still in flux — `Registry` and `Executor` types
 re-exported by `apcore-cli-typescript` are local placeholder interfaces
@@ -52,6 +70,5 @@ const cli = createCli({ extensionsDir: "./examples/extensions" });
 cli.parse(process.argv);
 ```
 
-A future task should also port `apcore-cli-python/examples/run_examples.sh`
-to TypeScript (as `run-examples.ts` or a tsx-based wrapper) so the e2e
-flows can be exercised in CI.
+At that point `run-examples.ts` can be extended to exercise the full CLI
+stack (list, describe, completion) end-to-end.

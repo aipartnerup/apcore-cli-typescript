@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "lint": "tsc --noEmit && eslint src tests --ext .ts",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "run-examples": "npx tsx examples/run-examples.ts"
   },
   "keywords": [
     "apcore",
