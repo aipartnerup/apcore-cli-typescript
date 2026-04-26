@@ -56,6 +56,15 @@ export class AuthProvider {
 
   /**
    * Add authentication headers to an outgoing request.
+   *
+   * Cross-SDK contract (D10-002, 2026-04-26): the input `headers` object
+   * is mutated **in place** and the same reference is returned. Callers
+   * that share the headers reference (the documented pattern in
+   * apcore-cli/docs/features/security.md §AuthProvider) can read
+   * `headers.Authorization` after the call without re-binding the
+   * return value. Python and Rust both mutate-and-return; TS previously
+   * spread into a new object, which silently broke shared-reference
+   * callers.
    */
   async authenticateRequest(
     headers: Record<string, string>,
@@ -75,7 +84,8 @@ export class AuthProvider {
           "Re-configure with 'apcore-cli config set auth.api_key'.",
       );
     }
-    return { ...headers, Authorization: `Bearer ${key.trim()}` };
+    headers.Authorization = `Bearer ${key.trim()}`;
+    return headers;
   }
 
   /**

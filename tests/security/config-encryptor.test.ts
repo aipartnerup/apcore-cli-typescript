@@ -152,3 +152,31 @@ describe("ConfigEncryptor", () => {
     });
   });
 });
+
+describe("store() keyring error handling (D10-003)", () => {
+  it("propagates keyring errors as ConfigDecryptionError instead of silently downgrading", async () => {
+    // Cross-SDK contract: when getKeytar() returns a keytar reference but
+    // setPassword throws (locked keyring, transient backend, permission
+    // revoked), the error must surface — TS previously caught it and fell
+    // through to AES file encryption. Python/Rust both surface it.
+    const { ConfigEncryptor, _setKeytarForTesting } = await import(
+      "../../src/security/config-encryptor.js?d10-003"
+    );
+    const { ConfigDecryptionError } = await import("../../src/errors.js");
+
+    const fakeKeytar = {
+      setPassword: async () => {
+        throw new Error("keyring locked");
+      },
+      getPassword: async () => null,
+      deletePassword: async () => true,
+    };
+    _setKeytarForTesting(fakeKeytar);
+    try {
+      const enc = new ConfigEncryptor();
+      await expect(enc.store("k", "v")).rejects.toBeInstanceOf(ConfigDecryptionError);
+    } finally {
+      _setKeytarForTesting(null);
+    }
+  });
+});

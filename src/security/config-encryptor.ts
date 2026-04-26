@@ -31,6 +31,16 @@ async function getKeytar(): Promise<any> { // eslint-disable-line @typescript-es
   }
 }
 
+/**
+ * Test-only seam: inject a stand-in `keytar` module so unit tests can
+ * exercise reachable-but-failing keyring paths (D10-003 regression
+ * coverage). Pass `null` to clear and fall back to real-keytar discovery
+ * on the next call. Production code MUST NOT call this.
+ */
+export function _setKeytarForTesting(mod: unknown): void { // eslint-disable-line @typescript-eslint/no-explicit-any
+  keytarModule = mod;
+}
+
 // ---------------------------------------------------------------------------
 // ConfigEncryptor
 // ---------------------------------------------------------------------------
@@ -52,6 +62,17 @@ export class ConfigEncryptor {
 
   /**
    * Encrypt and store a configuration value.
+   *
+   * Cross-SDK contract (D10-003, 2026-04-26): when the OS keyring is
+   * detected as available but `setPassword` then throws (locked keyring,
+   * transient backend failure, permission revoked, etc.), the error is
+   * propagated wrapped in a `ConfigDecryptionError`. Previously TS
+   * caught the exception and silently fell through to AES file encryption
+   * — a quiet downgrade that surprised users who expected a hard failure.
+   * Python lets the keyring exception propagate raw; Rust returns
+   * `ConfigDecryptionError::KeyringError`. The fall-through to AES is
+   * still reached when `getKeytar()` returns `null` (keyring
+   * genuinely unavailable on this platform / install).
    */
   async store(key: string, value: string): Promise<string> {
     const keytar = await getKeytar();
@@ -59,8 +80,16 @@ export class ConfigEncryptor {
       try {
         await keytar.setPassword(ConfigEncryptor.SERVICE_NAME, key, value);
         return `keyring:${key}`;
-      } catch {
-        // Fall through to file-based encryption
+      } catch (err) {
+        // Reachable but rejected the write — surface the error rather
+        // than downgrading to file encryption. Use the existing
+        // ConfigDecryptionError class so callers handling either store
+        // or retrieve failures can keep a single catch.
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new ConfigDecryptionError(
+          `Failed to store '${key}' in OS keyring: ${detail}. ` +
+            `Unset APCORE_CLI_CONFIG_PASSPHRASE-aware backends or unlock the keyring before retrying.`,
+        );
       }
     }
     logWarn("OS keyring unavailable. Using file-based encryption.");

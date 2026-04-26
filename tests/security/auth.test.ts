@@ -61,6 +61,21 @@ describe("AuthProvider", () => {
       const auth = new AuthProvider(config);
       await expect(auth.authenticateRequest({})).rejects.toThrow(AuthenticationError);
     });
+
+    it("D10-002: mutates the input headers object in place", async () => {
+      // Cross-SDK contract: callers that share the headers reference must
+      // see Authorization on the original object after the call. Python
+      // and Rust mutate-and-return; TS must too.
+      process.env.APCORE_AUTH_API_KEY = "my-key";
+      const config = new ConfigResolver();
+      const auth = new AuthProvider(config);
+      const input: Record<string, string> = { "Content-Type": "application/json" };
+      const returned = await auth.authenticateRequest(input);
+      // Same reference.
+      expect(returned).toBe(input);
+      // Mutation visible on the original.
+      expect(input.Authorization).toBe("Bearer my-key");
+    });
   });
 
   describe("decryption error wrapping (A-D-009)", () => {
