@@ -139,6 +139,19 @@ function resolveNode(
         properties: {},
         required: [] as string[],
       };
+      // Seed parent node's own properties first so sibling fields under a
+      // parent that mixes top-level `properties` with `anyOf`/`oneOf` are
+      // preserved (parity with allOf below). Audit D11-NEW-001 (2026-05-08).
+      if (typeof obj.properties === "object" && obj.properties !== null) {
+        Object.assign(merged.properties as Record<string, unknown>, obj.properties);
+      }
+      // Capture parent's sibling `required` BEFORE the branch loop. Per
+      // JSON Schema semantics, a parent's required applies in addition to
+      // the anyOf/oneOf branch intersection. Cross-SDK parity with Python
+      // ref_resolver.py:102. Audit D11-NEW-001 (2026-05-08).
+      const siblingRequired: string[] = Array.isArray(obj.required)
+        ? (obj.required as string[]).slice()
+        : [];
       const allRequiredSets: Set<string>[] = [];
       for (const subSchema of obj[keyword] as unknown[]) {
         const resolved = resolveNode(
@@ -159,7 +172,9 @@ function resolveNode(
           allRequiredSets.push(new Set(resolved.required as string[]));
         }
       }
-      // Required = intersection of all branches
+      // Required = parent's sibling required ∪ intersection of all branches
+      // (deduplicated, preserving sibling-first order). Audit D11-NEW-001.
+      let branchRequired: string[] = [];
       if (allRequiredSets.length > 0) {
         let intersection = allRequiredSets[0];
         for (let i = 1; i < allRequiredSets.length; i++) {
@@ -167,10 +182,17 @@ function resolveNode(
             [...intersection].filter((x) => allRequiredSets[i].has(x)),
           );
         }
-        merged.required = [...intersection];
-      } else {
-        merged.required = [];
+        branchRequired = [...intersection];
       }
+      const seen = new Set<string>();
+      const combinedRequired: string[] = [];
+      for (const r of [...siblingRequired, ...branchRequired]) {
+        if (!seen.has(r)) {
+          seen.add(r);
+          combinedRequired.push(r);
+        }
+      }
+      merged.required = combinedRequired;
       // Copy non-composition keys
       for (const [k, v] of Object.entries(obj)) {
         if (k !== keyword && !(k in merged)) {
@@ -181,7 +203,11 @@ function resolveNode(
     }
   }
 
-  // Recursively process nested properties
+  // Recursively process nested properties.
+  // Audit D11-NEW-003 (2026-05-08): max_depth counts $ref hops only — plain
+  // nested-properties recursion does NOT increment `depth`. Aligned with
+  // Rust's interpretation of the spec ("Maximum $ref resolution recursion
+  // depth", schema-parser.md §Contract: resolve_refs).
   if ("properties" in obj && typeof obj.properties === "object" && obj.properties !== null) {
     const props = obj.properties as Record<string, unknown>;
     for (const [propName, propSchema] of Object.entries(props)) {
@@ -189,7 +215,7 @@ function resolveNode(
         propSchema,
         defs,
         visited,
-        depth + 1,
+        depth,
         maxDepth,
         moduleId,
       );

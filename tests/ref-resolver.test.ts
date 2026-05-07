@@ -290,4 +290,60 @@ describe("resolveRefs", () => {
     resolveRefs(schema);
     expect(schema).toEqual(original);
   });
+
+  // Audit D11-NEW-001 (2026-05-08): a parent's `required` applies in
+  // addition to anyOf/oneOf branch intersection — sibling required must
+  // not be silently dropped. Cross-SDK parity with Python ref_resolver.py.
+  it("preserves parent sibling required when merging anyOf branches", () => {
+    const schema = {
+      type: "object",
+      required: ["x"],
+      anyOf: [
+        { properties: { a: { type: "string" } }, required: ["a"] },
+        { properties: { a: { type: "integer" } }, required: ["a"] },
+      ],
+    };
+    const result = resolveRefs(schema);
+    expect(result.required).toEqual(["x", "a"]);
+  });
+
+  it("preserves parent sibling required when merging oneOf branches", () => {
+    const schema = {
+      type: "object",
+      required: ["host", "port"],
+      oneOf: [
+        { properties: { mode: { const: "http" } }, required: ["scheme"] },
+        { properties: { mode: { const: "tcp" } }, required: ["scheme"] },
+      ],
+    };
+    const result = resolveRefs(schema);
+    expect(result.required).toEqual(["host", "port", "scheme"]);
+  });
+
+  it("dedupes when sibling required overlaps with branch intersection", () => {
+    const schema = {
+      type: "object",
+      required: ["a"],
+      anyOf: [{ required: ["a", "b"] }, { required: ["a", "c"] }],
+    };
+    const result = resolveRefs(schema);
+    expect(result.required).toEqual(["a"]);
+  });
+
+  // Audit D11-NEW-003 (2026-05-08): max_depth counts $ref hops only;
+  // plain nested-properties recursion does NOT increment depth. A
+  // deeply-nested non-ref schema must resolve cleanly.
+  it("does not count plain nested-properties recursion against max_depth", () => {
+    let nested: Record<string, unknown> = { type: "string" };
+    for (let i = 0; i < 50; i++) {
+      nested = { type: "object", properties: { inner: nested } };
+    }
+    const schema = {
+      type: "object",
+      properties: { root: nested },
+      $defs: {},
+    };
+    // Pre-fix this would crash with depth-exceeded around the 32nd level.
+    expect(() => resolveRefs(schema, 32)).not.toThrow();
+  });
 });

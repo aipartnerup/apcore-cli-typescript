@@ -363,7 +363,9 @@ describe("schema_to_cli_options no-flag collision (D11-005)", () => {
         no_force: { type: "string" },
       },
     };
-    expect(() => schemaToCliOptions(schema)).toThrow(/process.exit\(2\)/);
+    // Audit D11-NEW-004 (2026-05-08): exit 48 per spec (SCHEMA_CIRCULAR_REF
+    // shared exit-code slot for schema-parsing failures), matching Python.
+    expect(() => schemaToCliOptions(schema)).toThrow(/process.exit\(48\)/);
     exitSpy.mockRestore();
   });
 
@@ -379,7 +381,9 @@ describe("schema_to_cli_options no-flag collision (D11-005)", () => {
         force: { type: "boolean" },
       },
     };
-    expect(() => schemaToCliOptions(schema)).toThrow(/process.exit\(2\)/);
+    // Audit D11-NEW-004 (2026-05-08): exit 48 per spec (SCHEMA_CIRCULAR_REF
+    // shared exit-code slot for schema-parsing failures), matching Python.
+    expect(() => schemaToCliOptions(schema)).toThrow(/process.exit\(48\)/);
     exitSpy.mockRestore();
   });
 

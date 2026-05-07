@@ -101,12 +101,14 @@ export function schemaToCliOptions(
       process.exit(EXIT_CODES.INVALID_CLI_INPUT);
     }
 
-    // Collision detection
+    // Collision detection — exit 48 per spec (docs/features/schema-parser.md
+    // Contract: schema_to_click_options Errors), matching Python sys.exit(48)
+    // at schema_parser.py:116. Audit D11-NEW-004 (2026-05-08).
     if (flagName in flagNames) {
       process.stderr.write(
         `Error: Flag name collision: properties '${propName}' and '${flagNames[flagName]}' both map to '${flagName}'.\n`,
       );
-      process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+      process.exit(EXIT_CODES.SCHEMA_CIRCULAR_REF);
     }
     flagNames[flagName] = propName;
 
@@ -131,7 +133,9 @@ export function schemaToCliOptions(
         process.stderr.write(
           `Error: Flag name collision: boolean property '${propName}' auto-generates '${noFlag}' which is already used by property '${flagNames[noFlag]}'.\n`,
         );
-        process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+        // Audit D11-NEW-004 (2026-05-08): exit 48 per spec, matching
+        // Python sys.exit(48) at schema_parser.py:137.
+        process.exit(EXIT_CODES.SCHEMA_CIRCULAR_REF);
       }
       flagNames[noFlag] = propName;
       const defaultVal = (propSchema.default as boolean) ?? false;
