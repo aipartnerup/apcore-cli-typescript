@@ -583,6 +583,87 @@ describe("ApcliGroup unknown subcommand warnings (Issue 7)", () => {
 // Issue 8 — error msg should say apcli.mode, not cli.apcli.mode
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// A-D-005 — tryFromYaml must NOT exit on array; must return error tuple
+// ---------------------------------------------------------------------------
+
+describe("ApcliGroup.tryFromYaml — non-panicking shape rejection (A-D-005)", () => {
+  it("returns [null, errorMessage] for array config (regression)", () => {
+    // Critical: tryFromYaml is the non-panicking variant. It MUST NOT call
+    // process.exit when given an array — must return a clean error tuple.
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("UNEXPECTED process.exit");
+    });
+    const [group, err] = ApcliGroup.tryFromYaml([], {
+      registryInjected: false,
+    });
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(group).toBeNull();
+    expect(err).not.toBeNull();
+    expect(String(err)).toMatch(/array/i);
+    exitSpy.mockRestore();
+  });
+
+  it("returns [null, errorMessage] for string config (existing behavior)", () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("UNEXPECTED process.exit");
+    });
+    const [group, err] = ApcliGroup.tryFromYaml("oops", {
+      registryInjected: false,
+    });
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(group).toBeNull();
+    expect(err).not.toBeNull();
+    exitSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A-D-006 — fromYaml must be lenient (warn + auto), per spec §4.2
+// ---------------------------------------------------------------------------
+
+describe("ApcliGroup.fromYaml — lenient on unexpected shape (A-D-006)", () => {
+  it("does NOT exit on string config; logs WARNING and coerces to mode auto", () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("UNEXPECTED process.exit");
+    });
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    const stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const g = ApcliGroup.fromYaml("oops" as unknown, {
+      registryInjected: false,
+    });
+    expect(exitSpy).not.toHaveBeenCalled();
+    // Must produce a usable group; with registryInjected=false → mode auto → 'all'.
+    expect(g.resolveVisibility()).toBe("all");
+    // A WARNING should be emitted (console.warn or stderr).
+    const allWarn = warnSpy.mock.calls.map((c) => String(c[0])).join("");
+    const allErr = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(allWarn + allErr).toMatch(/apcli|unexpected|auto/i);
+    exitSpy.mockRestore();
+    warnSpy.mockRestore();
+    stderrSpy.mockRestore();
+  });
+
+  it("does NOT exit on array config; coerces to auto", () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("UNEXPECTED process.exit");
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const g = ApcliGroup.fromYaml([] as unknown, {
+      registryInjected: true,
+    });
+    expect(exitSpy).not.toHaveBeenCalled();
+    // registryInjected=true → auto-detect → 'none'.
+    expect(g.resolveVisibility()).toBe("none");
+    exitSpy.mockRestore();
+  });
+});
+
 describe("ApcliGroup mode error messages (Issue 8)", () => {
   it("invalid string mode: message uses 'apcli.mode', not 'cli.apcli.mode'", () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {

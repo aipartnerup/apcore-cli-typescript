@@ -254,6 +254,21 @@ export interface CreateCliOptions {
    * back to auto-detect: standalone → visible, embedded → hidden.
    */
   apcli?: ApcliConfig | ApcliGroup;
+  /**
+   * Host application version printed by `-V, --version`.
+   *
+   * When omitted, the `--version` flag is NOT registered — embedded CLIs
+   * that do not opt in will not surface the SDK's own version. The
+   * standalone `apcore-cli` binary entry point passes its package version
+   * explicitly (see `main()`).
+   */
+  version?: string;
+  /**
+   * Top-level CLI description shown at the head of `--help`. Defaults to
+   * `${progName} CLI` when omitted, so embedded CLIs do not leak the
+   * "apcore" framework name into their own help output.
+   */
+  description?: string;
 }
 
 /**
@@ -276,6 +291,8 @@ export function createCli(
   let app: APCore | undefined;
   let expose: Record<string, unknown> | import("./exposure.js").ExposureFilter | undefined;
   let apcliOption: ApcliConfig | ApcliGroup | undefined;
+  let appVersion: string | undefined;
+  let appDescription: string | undefined;
   if (typeof extensionsDirOrOpts === "object" && extensionsDirOrOpts !== null) {
     extensionsDir = extensionsDirOrOpts.extensionsDir;
     progName = extensionsDirOrOpts.progName ?? progName;
@@ -286,6 +303,8 @@ export function createCli(
     extraCommands = extensionsDirOrOpts.extraCommands;
     expose = extensionsDirOrOpts.expose;
     apcliOption = extensionsDirOrOpts.apcli;
+    appVersion = extensionsDirOrOpts.version;
+    appDescription = extensionsDirOrOpts.description;
   } else {
     extensionsDir = extensionsDirOrOpts;
   }
@@ -348,12 +367,14 @@ export function createCli(
 
   const program = new Command(resolvedProgName)
     .exitOverride()
-    .version(VERSION, "-V, --version", "Print version")
     .helpOption("-h, --help", "Print help")
     .addHelpCommand("help [command]", "Print this message or the help of the given subcommand(s)")
-    .description("apcore CLI — execute apcore modules from the command line")
+    .description(appDescription ?? `${resolvedProgName} CLI`)
     .option("--log-level <level>", "Logging level (DEBUG|INFO|WARNING|ERROR)", "WARNING")
-    .option("--verbose", "Show all options in help output (including built-in apcore options)");
+    .option("--verbose", "Show all options in help output (including built-in options)");
+  if (appVersion) {
+    program.version(appVersion, "-V, --version", "Print version");
+  }
   program.configureHelp({ formatHelp: canonicalFormatHelp });
 
   // Discovery flags are standalone-only (FE-13 T-APCLI-27/28).
@@ -388,7 +409,7 @@ export function createCli(
   // the private _hidden field — this survives minor Commander bumps.
   const apcliGroup = program
     .command("apcli", { hidden: !apcliCfg.isGroupVisible() })
-    .description("apcore-cli built-in commands");
+    .description("Built-in commands");
 
   // Dispatch the 13-entry subcommand registrar table (FE-13 §4.9).
   if (registry) {
@@ -433,12 +454,14 @@ export function createCli(
   // Footer hints for discoverability
   program.addHelpText("after", [
     "",
-    "Use --help --verbose to show all options (including built-in apcore options).",
+    "Use --help --verbose to show all options (including built-in options).",
     "Use --help --man to display a formatted man page.",
   ].join("\n"));
 
   // Register --help --man support (stays at root — spec §4.1).
-  configureManHelp(program, resolvedProgName, VERSION);
+  // The man page reflects the host app's version when supplied; otherwise
+  // falls back to the SDK version so the manpage still has a stamp.
+  configureManHelp(program, resolvedProgName, appVersion ?? VERSION);
 
   // Register extra commands (F11) — validate no name collisions with live
   // Commander tree (root + apcli group subcommands). FE-13 moved the old
@@ -806,7 +829,15 @@ async function loadBindingDisplayOverlay(
  */
 export function main(progName?: string): void {
   verboseHelp = hasVerboseFlag();
-  const program = createCli(undefined, progName, verboseHelp);
+  // Standalone bin entry: SDK version IS the app version. Pass it through
+  // explicitly so createCli registers --version (which is intentionally
+  // gated on opts.version for embedded callers — see issue #18).
+  const program = createCli({
+    progName,
+    verbose: verboseHelp,
+    version: VERSION,
+    description: `${progName ?? "apcore-cli"} — execute apcore modules from the command line`,
+  });
 
   try {
     program.parse(process.argv);

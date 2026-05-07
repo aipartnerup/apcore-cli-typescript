@@ -49,9 +49,9 @@ Terminal adapter for apcore. Execute AI-Perceivable modules from the command lin
 pnpm add apcore-cli apcore-js
 ```
 
-Requires Node.js 18+ and `apcore-js >= 0.19.0`.
+Requires Node.js 18+ and `apcore-js >= 0.21.0`.
 
-**Optional:** install `apcore-toolkit` (>=0.5.0) to enable display overlay and registry writer integration via `applyToolkitIntegration`, `DisplayResolver`, and `RegistryWriter`.
+**Optional:** install `apcore-toolkit` (>=0.6.0) to enable display overlay and registry writer integration via `applyToolkitIntegration`, `DisplayResolver`, and `RegistryWriter`.
 
 ```bash
 pnpm add apcore-cli apcore-js
@@ -118,6 +118,8 @@ async function main() {
     executor,
     progName: "myapp",
     // expose: { mode: "include", include: ["admin.*"] },
+    // apcli: { mode: "exclude", exclude: ["init"] },  // hide init from the apcli group
+    // apcli: false,                                    // or hide the entire apcli group
     // extraCommands: [customCmd1, customCmd2],
   });
   cli.parse(process.argv);
@@ -198,10 +200,10 @@ apcore-cli apcli describe math.add
 apcore-cli apcli exec math.add --a 5 --b 10
 ```
 
-> **Migration note (v0.7):** Root-level invocations (`apcore-cli list`, `apcore-cli describe`, …) still work in **standalone mode** but emit a deprecation
-> `WARNING` and are removed in v0.8. Embedded integrations (host CLIs that
-> inject a `registry`) never had root-level built-ins in the first place and
-> see no warnings. See the full migration timeline in the spec repo:
+> **Migration note (v0.8):** Root-level built-ins (`apcore-cli list`, `apcore-cli describe`, …) were removed in v0.8 — use `<cli> apcli <subcommand>`.
+> Only the `apcli` group is supported; legacy root-level shims have been retired.
+> Embedded integrations (host CLIs that inject a `registry`) never had root-level
+> built-ins in the first place. See the full migration timeline in the spec repo:
 > [`docs/features/builtin-group.md §11 Migration`](../apcore-cli/docs/features/builtin-group.md#11-migration).
 
 The canonical 13 `apcli` subcommands:
@@ -230,7 +232,7 @@ The canonical 13 `apcli` subcommands:
 
 | Command | Description |
 |---------|-------------|
-| `apcli init` | Scaffold a starter `apcore.yaml` / extensions layout (see `registerInitCommand` in `src/init-cmd.ts`) |
+| `apcli init module <id>` | Scaffold a new module (TS/JS/YAML binding) into the extensions or commands directory (see `registerInitCommand` in `src/init-cmd.ts`) |
 | `apcli validate` | Validate modules and configuration against JSON Schema (see `registerValidateCommand` in `src/discovery.ts`) |
 
 **Shell integration**
@@ -244,8 +246,8 @@ The canonical 13 `apcli` subcommands:
 
 | Mode | Invocation | Notes |
 |------|------------|-------|
-| **Standalone** (`apcore-cli`) | `apcore-cli apcli <subcommand>` | Discovery flags (`--extensions-dir`, `--commands-dir`, `--binding`) are registered. Legacy root-level built-ins are kept as deprecation shims. |
-| **Embedded** (`createCli({ registry, … })`) | `<host-cli> apcli <subcommand>` | Discovery flags are gated off (injected registry already supplies modules). No legacy shims — embedded hosts are new territory. |
+| **Standalone** (`apcore-cli`) | `apcore-cli apcli <subcommand>` | Discovery flags (`--extensions-dir`, `--commands-dir`, `--binding`) are registered. Only the `apcli` group is supported (legacy root-level shims were removed in v0.8). |
+| **Embedded** (`createCli({ registry, … })`) | `<host-cli> apcli <subcommand>` | Discovery flags are gated off (injected registry already supplies modules). Only the `apcli` group is supported. |
 
 ### Module Execution Options
 
@@ -257,7 +259,7 @@ When executing a module (e.g. `apcore-cli math.add`), these built-in options are
 | `--yes` / `-y` | Bypass approval prompts |
 | `--large-input` | Allow STDIN input larger than 10MB |
 | `--format <fmt>` | Output format: `json`, `table`, `csv`, `yaml`, or `jsonl` |
-| `--sandbox` | Run module in subprocess sandbox (not yet implemented — always hidden) |
+| `--sandbox` | Run module in a subprocess sandbox (re-exec with stripped env; 64MiB stdout/stderr cap; 300s default timeout). Hidden by default — set `APCORE_CLI_SANDBOX=1` to enable globally. |
 | `--dry-run` | Run preflight checks (schema, ACL, approval) without executing (FE-11) |
 | `--trace` | Emit execution pipeline trace (strategy, hooks, middleware timings) |
 | `--stream` | Stream results line-by-line for stream-capable modules |
@@ -284,18 +286,20 @@ The `list` command supports enhanced filtering and inspection flags:
 
 ### Exit Codes
 
-| Code | Meaning |
-|------|---------|
-| `0` | Success |
-| `1` | Module execution error |
-| `2` | Invalid CLI input |
-| `44` | Module not found / disabled / load error |
-| `45` | Schema validation error |
-| `46` | Approval denied or timed out |
-| `47` | Configuration error |
-| `48` | Schema circular reference |
-| `77` | ACL denied |
-| `130` | Execution cancelled (Ctrl+C) |
+The exit codes below are also exported as the `EXIT_CODES` const-object from `apcore-cli` (canonical source: `src/errors.ts`) and are mapped from thrown errors via `exitCodeForError()`.
+
+| Code | `EXIT_CODES` key | Meaning |
+|------|------------------|---------|
+| `0` | `SUCCESS` | Success |
+| `1` | `MODULE_EXECUTE_ERROR` / `MODULE_TIMEOUT` | Module execution error |
+| `2` | `INVALID_CLI_INPUT` | Invalid CLI input |
+| `44` | `MODULE_NOT_FOUND` / `MODULE_LOAD_ERROR` / `MODULE_DISABLED` / `DEPENDENCY_NOT_FOUND` / `DEPENDENCY_VERSION_MISMATCH` | Module not found / disabled / load error |
+| `45` | `SCHEMA_VALIDATION_ERROR` | Schema validation error |
+| `46` | `APPROVAL_DENIED` / `APPROVAL_TIMEOUT` | Approval denied or timed out |
+| `47` | `CONFIG_NOT_FOUND` / `CONFIG_INVALID` | Configuration error |
+| `48` | `SCHEMA_CIRCULAR_REF` | Schema circular reference |
+| `77` | `ACL_DENIED` | ACL denied |
+| `130` | *(no key — set by signal handler)* | Execution cancelled (Ctrl+C) |
 
 ## Configuration
 
@@ -320,6 +324,7 @@ apcore-cli uses a 4-tier configuration precedence:
 | `APCORE_CLI_APPROVAL_TIMEOUT` | Default approval prompt timeout in seconds | `60` |
 | `APCORE_CLI_STRATEGY` | Default execution strategy (`standard`, `internal`, `testing`, `performance`, `minimal`) | `standard` |
 | `APCORE_CLI_GROUP_DEPTH` | Maximum nesting depth when rendering grouped module command trees | `2` |
+| `APCORE_CLI_APCLI` | Override apcli group visibility (Tier 2). Accepts `show`/`1`/`true` → all, `hide`/`0`/`false` → none. Sealed by `apcli.disable_env: true`. | *(unset)* |
 
 ### Config File (`apcore.yaml`)
 
@@ -335,6 +340,11 @@ cli:
   approval_timeout: 60      # seconds
   strategy: standard        # standard | internal | testing | performance | minimal
   group_depth: 2            # grouped-module command-tree nesting depth
+apcli:                      # built-in command group visibility (FE-13)
+  mode: all                 # all | none | include | exclude
+  include: []               # subcommand allowlist when mode=include
+  exclude: []               # subcommand denylist when mode=exclude
+  disable_env: false        # set true to seal Tier 2 (APCORE_CLI_APCLI env var)
 ```
 
 ## Features
@@ -347,7 +357,7 @@ cli:
 - **TTY-adaptive output** -- rich tables for terminals, JSON for pipes (configurable via `--format`)
 - **Approval gate** -- TTY-aware HITL prompts for modules with `requires_approval: true`, with `--yes` bypass and 60s timeout
 - **Schema validation** -- inputs validated against JSON Schema before execution, with `$ref`/`allOf`/`anyOf`/`oneOf` resolution
-- **Security** -- API key auth (keyring + AES-256-GCM), append-only audit logging, subprocess sandboxing (stub — not yet runnable)
+- **Security** -- API key auth (keyring + AES-256-GCM), append-only audit logging, subprocess sandboxing (re-exec model, env stripping, 64MiB output cap)
 - **Shell completions** -- `apcore-cli completion bash|zsh|fish` generates completion scripts with dynamic module ID completion
 - **Man pages** -- `apcore-cli man <command>` for single commands, or `--help --man` for a complete program man page. `configureManHelp()` provides one-line integration for downstream projects
 - **Documentation URL** -- `setDocsUrl()` adds doc links to help footers and man pages
@@ -380,7 +390,7 @@ apcore-cli (the adapter)
     +-- approval             TTY-aware HITL approval
     +-- output               TTY-adaptive JSON/table output
     +-- AuditLogger          JSON Lines execution logging
-    +-- Sandbox              Subprocess isolation (stub — not yet runnable)
+    +-- Sandbox              Subprocess isolation (re-exec, env stripped, output capped)
     |
     v
 apcore Registry + Executor (your modules, unchanged)
@@ -388,11 +398,11 @@ apcore Registry + Executor (your modules, unchanged)
 
 ## API Overview
 
-**Classes:** `LazyModuleGroup`, `ConfigResolver`, `AuthProvider`, `ConfigEncryptor`, `AuditLogger`, `Sandbox`
+**Classes:** `LazyModuleGroup`, `GroupedModuleGroup`, `ApcliGroup`, `ExposureFilter`, `CliApprovalHandler`, `ConfigResolver`, `AuthProvider`, `ConfigEncryptor`, `AuditLogger`, `Sandbox`
 
-**Interfaces:** `CreateCliOptions`, `Registry`, `Executor`, `ModuleDescriptor`
+**Interfaces:** `CreateCliOptions`, `Registry`, `Executor`, `ModuleDescriptor`, `APCore`, `ApcliConfig`, `ApcliMode`, `StrategyInfo`, `StrategyStep`
 
-**Functions:** `createCli`, `main`, `buildModuleCommand`, `validateModuleId`, `collectInput`, `schemaToCliOptions`, `reconvertEnumValues`, `resolveRefs`, `checkApproval`, `resolveFormat`, `formatModuleList`, `formatModuleDetail`, `formatExecResult`, `registerDiscoveryCommands`, `registerShellCommands`, `setAuditLogger`, `getAuditLogger`, `setVerboseHelp`, `setDocsUrl`, `buildProgramManPage`, `configureManHelp`, `exitCodeForError`, `mapType`, `extractHelp`, `truncate`
+**Functions:** `createCli`, `main`, `buildModuleCommand`, `validateModuleId`, `collectInput`, `schemaToCliOptions`, `reconvertEnumValues`, `resolveRefs`, `checkApproval`, `formatExecResult`, `registerListCommand`, `registerDescribeCommand`, `registerExecCommand`, `registerValidateCommand`, `registerHealthCommand`, `registerUsageCommand`, `registerEnableCommand`, `registerDisableCommand`, `registerReloadCommand`, `registerConfigCommand`, `registerCompletionCommand`, `registerPipelineCommand`, `registerInitCommand`, `setAuditLogger`, `getAuditLogger`, `setVerboseHelp`, `setDocsUrl`, `configureManHelp`, `exitCodeForError`
 
 **Errors:** `ApprovalTimeoutError`, `ApprovalDeniedError`, `AuthenticationError`, `ConfigDecryptionError`, `ModuleExecutionError`, `ModuleNotFoundError`, `SchemaValidationError`
 

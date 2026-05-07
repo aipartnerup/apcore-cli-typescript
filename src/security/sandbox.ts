@@ -69,6 +69,17 @@ export class Sandbox {
     const tmpDir = mkdtempSync(join(tmpdir(), "apcore_sandbox_"));
 
     const env = buildSandboxEnv(tmpDir);
+
+    // Resolve APCORE_EXTENSIONS_ROOT to absolute BEFORE forwarding into the
+    // child env. The child's cwd is the fresh tmpDir, so any relative path
+    // (default `./extensions` or user-provided `./relative/foo`) would
+    // otherwise resolve under the empty tmpDir → MODULE_NOT_FOUND.
+    // Note: a future Sandbox.withExtensionsRoot(path) builder (Python parity)
+    // could replace this env-based wiring; out of scope for this fix.
+    const { resolve: resolvePath } = await import("node:path");
+    if (env.APCORE_EXTENSIONS_ROOT) {
+      env.APCORE_EXTENSIONS_ROOT = resolvePath(env.APCORE_EXTENSIONS_ROOT);
+    }
     const binaryPath = process.argv[1];
     const child = spawn(process.execPath, [binaryPath, "--internal-sandbox-runner", moduleId], {
       env,
@@ -78,19 +89,31 @@ export class Sandbox {
 
     let stdout = "";
     let stderr = "";
-    let totalBytes = 0;
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
     let sizeExceeded = false;
 
     child.stdout.on("data", (chunk: Buffer) => {
-      totalBytes += chunk.length;
-      if (totalBytes > SANDBOX_OUTPUT_SIZE_LIMIT) {
+      if (sizeExceeded) return;
+      stdoutBytes += chunk.length;
+      if (stdoutBytes > SANDBOX_OUTPUT_SIZE_LIMIT) {
         sizeExceeded = true;
         child.kill("SIGKILL");
         return;
       }
       stdout += chunk.toString();
     });
+    // stderr cap: hostile modules spamming stderr can OOM the parent
+    // without an upper bound. Apply the same 64 MiB ceiling as stdout
+    // (independent counter so each stream gets its full budget).
     child.stderr.on("data", (chunk: Buffer) => {
+      if (sizeExceeded) return;
+      stderrBytes += chunk.length;
+      if (stderrBytes > SANDBOX_OUTPUT_SIZE_LIMIT) {
+        sizeExceeded = true;
+        child.kill("SIGKILL");
+        return;
+      }
       stderr += chunk.toString();
     });
 

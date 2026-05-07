@@ -5,6 +5,54 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-05-07
+
+### Changed
+
+- **Dependency bump**: peer-dep `apcore-js >= 0.21.0` (was `>= 0.19.0`) and the
+  optional `apcore-toolkit >= 0.6.0` (was `>= 0.5.0`). Aligns with upstream
+  `apcore 0.21.0` (Module.preview / PreflightResult.predicted_changes) and
+  `apcore-toolkit 0.6.0` (surface-aware formatters).
+- **Issue #19 — drop "apcore" branding from embedded-mode `--help`**: top-level
+  CLI description now resolves from a new `description?: string` field on
+  `CreateCliOptions` (defaults to `${progName} CLI`); the `apcli` subgroup
+  description is now `Built-in commands` instead of `apcore-cli built-in
+  commands`; `--verbose` option text and the help footer drop the trailing
+  `apcore` from `(including built-in apcore options)`. Standalone bin entry
+  (`bin/apcore-cli.ts → main()`) passes `description="<prog> — execute apcore
+  modules from the command line"` explicitly so the standalone surface is
+  unchanged.
+- **Conformance fixtures (`aiperceivable/apcore-cli/conformance/fixtures/apcli-visibility/`)**
+  refreshed to match the new debranded help output and to forward `version` /
+  `description` from the fixture inputs through `captureHelp()`.
+
+### Added
+
+- **Issue #18 — host-app `--version` opt-in**: new `version?: string` field on
+  `CreateCliOptions`. When supplied, registers `-V/--version` with the host's
+  version string. **When omitted, the `--version` flag is no longer registered**
+  — embedded CLIs that do not opt in stop leaking the SDK's own version. The
+  standalone bin entry passes `version: VERSION` (the SDK package version)
+  explicitly so the `apcore-cli` binary's behaviour is preserved. The
+  `configureManHelp(...)` man-page generator falls back to the SDK version
+  when the host does not supply one, so manpages always carry a version stamp.
+- **Issue #19 — `description?: string`** on `CreateCliOptions`.
+- **Issue #17 — `system.usage` aggregator + `list --sort calls|errors|latency`**:
+  new module `src/system-usage.ts` reads `~/.apcore-cli/audit.jsonl`, filters
+  by period (default 24h), and returns per-module aggregates (`calls`,
+  `errors`, `avg latency_ms`). `list --sort {calls,errors,latency}` now
+  consults the aggregator instead of falling back to id-sort with a buried
+  `process.stderr.write("Warning: ...")`. When the audit log has no entries
+  in the period window the discovery layer prints a user-visible note to
+  stderr (`note: no usage data available for --sort <field>; sorted by id.
+  ...`) and falls back to id-sort. Module-protocol registration of
+  `system.usage.summary` / `system.usage.module` as registry-callable
+  built-ins is tracked as a follow-up — today the readers are invoked
+  directly by the discovery layer.
+- New file: `src/system-usage.ts`.
+
+---
+
 ## [0.7.0] - 2026-04-25
 
 ### Added

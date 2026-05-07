@@ -21,6 +21,7 @@ import {
   resolveFormat,
 } from "./output.js";
 import { getAuditLogger } from "./security/audit.js";
+import { sortModulesByUsage } from "./system-usage.js";
 
 const TAG_PATTERN = /^[a-z][a-z0-9_-]*$/;
 
@@ -175,15 +176,22 @@ export function registerListCommand(
         }
       }
 
-      // Sort — usage-based sorts require system.usage modules
+      // Sort — usage-based sorts read aggregates from the audit log
+      // (issue #17). Falls back to id-sort with a visible note if the log
+      // has no entries in the default 24h window.
       if (opts.sort === "calls" || opts.sort === "errors" || opts.sort === "latency") {
-        process.stderr.write(
-          `Warning: Usage data not available; sorting by id. Sort by ${opts.sort} requires system.usage modules.\n`,
-        );
-      }
-      modules.sort((a, b) => (a.id ?? "").localeCompare(b.id ?? ""));
-      if (opts.reverse) {
-        modules.reverse();
+        const { used } = sortModulesByUsage(modules, opts.sort, { reverse: !opts.reverse });
+        if (!used) {
+          process.stderr.write(
+            `note: no usage data available for --sort ${opts.sort}; sorted by id. ` +
+            "Run some modules first to populate ~/.apcore-cli/audit.jsonl.\n",
+          );
+        }
+      } else {
+        modules.sort((a, b) => (a.id ?? "").localeCompare(b.id ?? ""));
+        if (opts.reverse) {
+          modules.reverse();
+        }
       }
 
       // Exposure filter (FE-12)

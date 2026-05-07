@@ -65,12 +65,16 @@ interface ScenarioOpts {
   progName?: string;
   registryInjected?: boolean;
   apcli?: unknown;
+  version?: string;
+  description?: string;
 }
 
 interface SharedCreateCli {
   prog_name?: string;
   registry_injected?: boolean;
   apcli?: unknown;
+  version?: string;
+  description?: string;
 }
 
 function mapSharedOpts(shared: SharedCreateCli): ScenarioOpts {
@@ -79,6 +83,8 @@ function mapSharedOpts(shared: SharedCreateCli): ScenarioOpts {
   if (shared.registry_injected !== undefined)
     out.registryInjected = shared.registry_injected;
   if (shared.apcli !== undefined) out.apcli = shared.apcli;
+  if (shared.version !== undefined) out.version = shared.version;
+  if (shared.description !== undefined) out.description = shared.description;
   return out;
 }
 
@@ -138,6 +144,8 @@ function captureHelp(scenario: string): string {
       finalOpts.executor = makeMockExecutor();
     }
     if (opts.apcli !== undefined) finalOpts.apcli = opts.apcli;
+    if (typeof opts.version === "string") finalOpts.version = opts.version;
+    if (typeof opts.description === "string") finalOpts.description = opts.description;
     const program = createCli(
       finalOpts as Parameters<typeof createCli>[0],
     );

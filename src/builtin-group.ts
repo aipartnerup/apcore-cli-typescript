@@ -134,6 +134,22 @@ export class ApcliGroup {
     config: unknown,
     opts: { registryInjected: boolean },
   ): ApcliGroup {
+    // Lenient shape handling per features/builtin-group.md §4.2:
+    // "On unexpected `config` type: returns ApcliGroup(mode='auto') after
+    // logging WARNING." Python implements this; the TS path previously
+    // hard-exited via _build → process.exit, breaking spec parity (A-D-006).
+    if (
+      config !== null &&
+      config !== undefined &&
+      typeof config !== "boolean" &&
+      (typeof config !== "object" || Array.isArray(config))
+    ) {
+      const got = Array.isArray(config) ? "array" : typeof config;
+      warn(
+        `apcore.yaml apcli has unexpected type ${got}; using auto-detect.`,
+      );
+      return ApcliGroup._build(undefined, opts, /*fromCliConfig*/ false);
+    }
     return ApcliGroup._build(
       config as ApcliConfig | undefined,
       opts,
@@ -150,8 +166,20 @@ export class ApcliGroup {
     config: unknown,
     opts: { registryInjected: boolean },
   ): [ApcliGroup, null] | [null, string] {
-    if (config !== null && config !== undefined && typeof config !== "boolean" && typeof config !== "object") {
-      return [null, `apcore.yaml 'apcli:' must be a bool, object, or null; got ${typeof config}`];
+    // Shape rejection. Note: `typeof [] === 'object'`, so arrays must be
+    // excluded explicitly — otherwise they fall through to fromYaml() which
+    // process.exit()s, violating the non-panicking contract (A-D-005).
+    if (
+      config !== null &&
+      config !== undefined &&
+      typeof config !== "boolean" &&
+      (typeof config !== "object" || Array.isArray(config))
+    ) {
+      const got = Array.isArray(config) ? "array" : typeof config;
+      return [
+        null,
+        `apcore.yaml 'apcli:' must be a bool, object, or null; got ${got}`,
+      ];
     }
     if (config !== null && config !== undefined && typeof config === "object" && !Array.isArray(config)) {
       const mode = (config as Record<string, unknown>)["mode"];
