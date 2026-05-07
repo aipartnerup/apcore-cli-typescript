@@ -97,6 +97,44 @@ describe("Commander exitOverride", () => {
 // createCli with pre-populated registry
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// D1-006 — allowedPrefixes plumbing
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// D1-007 — public output-formatter re-exports
+// ---------------------------------------------------------------------------
+
+describe("public surface — output formatter re-exports (D1-007)", () => {
+  it("re-exports formatExecResult, formatModuleList, formatModuleDetail, resolveFormat from index", async () => {
+    const idx = await import("../src/index.js");
+    expect(typeof idx.formatExecResult).toBe("function");
+    expect(typeof idx.formatModuleList).toBe("function");
+    expect(typeof idx.formatModuleDetail).toBe("function");
+    expect(typeof idx.resolveFormat).toBe("function");
+  });
+});
+
+describe("createCli() — allowedPrefixes (D1-006)", () => {
+  it("accepts allowedPrefixes on CreateCliOptions without throwing", () => {
+    const cli = createCli({
+      progName: "test-cli",
+      allowedPrefixes: ["myapp.", "trusted_module."],
+    });
+    expect(cli.name()).toBe("test-cli");
+  });
+
+  it("applyToolkitIntegration accepts an allowedPrefixes option (signature check)", async () => {
+    const { applyToolkitIntegration } = await import("../src/main.js");
+    // Call with no commandsDir/bindingPath — fast no-op path. The crucial
+    // assertion is the signature: passing the options bag must type-check
+    // and the function must not throw on the early-return branch.
+    await expect(
+      applyToolkitIntegration(undefined, undefined, { allowedPrefixes: ["safe."] }),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe("createCli() with pre-populated registry", () => {
   it("accepts registry via CreateCliOptions", () => {
     const registry = {

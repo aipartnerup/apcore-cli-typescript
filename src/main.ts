@@ -243,6 +243,17 @@ export interface CreateCliOptions {
   /** Path to binding.yaml for display overlay (apcore-toolkit DisplayResolver). */
   bindingPath?: string;
   /**
+   * Optional allowlist of module-path prefixes forwarded to
+   * apcore-toolkit's `RegistryWriter.write` when registering convention-scanned
+   * or binding-loaded modules. When set, the writer rejects any `target:`
+   * path outside the listed prefixes — mitigates arbitrary-code-execution via
+   * forged binding YAML (e.g. `target: "os:system"`).
+   *
+   * Mirrors the Python SDK's `allowed_prefixes` kwarg
+   * (apcore-cli-python/src/apcore_cli/factory.py).
+   */
+  allowedPrefixes?: string[];
+  /**
    * Built-in apcli group configuration (FE-13).
    *
    * Accepts:
@@ -293,6 +304,7 @@ export function createCli(
   let apcliOption: ApcliConfig | ApcliGroup | undefined;
   let appVersion: string | undefined;
   let appDescription: string | undefined;
+  let allowedPrefixes: string[] | undefined;
   if (typeof extensionsDirOrOpts === "object" && extensionsDirOrOpts !== null) {
     extensionsDir = extensionsDirOrOpts.extensionsDir;
     progName = extensionsDirOrOpts.progName ?? progName;
@@ -305,6 +317,7 @@ export function createCli(
     apcliOption = extensionsDirOrOpts.apcli;
     appVersion = extensionsDirOrOpts.version;
     appDescription = extensionsDirOrOpts.description;
+    allowedPrefixes = extensionsDirOrOpts.allowedPrefixes;
   } else {
     extensionsDir = extensionsDirOrOpts;
   }
@@ -510,7 +523,7 @@ export function createCli(
     const opts = thisCommand.opts();
     const commandsDir = opts.commandsDir as string | undefined;
     const bindingPath = opts.binding as string | undefined;
-    await applyToolkitIntegration(commandsDir, bindingPath);
+    await applyToolkitIntegration(commandsDir, bindingPath, { allowedPrefixes });
   });
 
   return program;
@@ -743,9 +756,20 @@ export function clearBindingDisplayMap(): void {
   bindingDisplayMap.clear();
 }
 
+/** Options bag for {@link applyToolkitIntegration}. */
+export interface ApplyToolkitIntegrationOptions {
+  /**
+   * Allowlist of module-path prefixes forwarded to apcore-toolkit's
+   * `RegistryWriter.write` when registering scanned/loaded modules. Mirrors
+   * the Python factory's `allowed_prefixes` kwarg.
+   */
+  allowedPrefixes?: string[];
+}
+
 export async function applyToolkitIntegration(
   commandsDir?: string,
   bindingPath?: string,
+  options: ApplyToolkitIntegrationOptions = {},
 ): Promise<void> {
   if (!commandsDir && !bindingPath) {
     return;
@@ -771,7 +795,7 @@ export async function applyToolkitIntegration(
 
   if (bindingPath) {
     try {
-      await loadBindingDisplayOverlay(toolkit, bindingPath);
+      await loadBindingDisplayOverlay(toolkit, bindingPath, options.allowedPrefixes);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logWarn(`apcore-toolkit: failed to load binding '${bindingPath}': ${msg}`);
@@ -789,6 +813,7 @@ export async function applyToolkitIntegration(
 async function loadBindingDisplayOverlay(
   toolkit: Record<string, unknown>,
   bindingPath: string,
+  allowedPrefixes?: string[],
 ): Promise<void> {
   const BindingLoaderCtor = toolkit.BindingLoader as
     | (new () => { load(path: string): unknown[] })
@@ -807,11 +832,29 @@ async function loadBindingDisplayOverlay(
   const resolver = new DisplayResolverCtor();
   const resolved = resolver.resolve(scanned, { bindingPath });
 
+  // Mirrors Python's RegistryWriter `allowed_prefixes` gate: any entry whose
+  // `target:` path is outside the allowlist is dropped before its display
+  // overlay reaches the runtime — the TS overlay path doesn't go through
+  // RegistryWriter, so we apply the same check inline.
+  const prefixes = allowedPrefixes && allowedPrefixes.length > 0 ? allowedPrefixes : null;
+  const isTargetAllowed = (target: unknown): boolean => {
+    if (!prefixes) return true;
+    if (typeof target !== "string" || target.length === 0) return true;
+    return prefixes.some((p) => target.startsWith(p));
+  };
+
   for (const mod of resolved) {
     if (!mod || typeof mod !== "object") continue;
-    const entry = mod as { moduleId?: unknown; metadata?: unknown };
+    const entry = mod as { moduleId?: unknown; metadata?: unknown; target?: unknown };
     const id = typeof entry.moduleId === "string" ? entry.moduleId : null;
     if (!id) continue;
+    if (!isTargetAllowed(entry.target)) {
+      logWarn(
+        `apcore-toolkit: dropped binding entry '${id}' — target '${String(entry.target)}' ` +
+          `is outside allowedPrefixes`,
+      );
+      continue;
+    }
     const meta = (entry.metadata as Record<string, unknown> | undefined) ?? {};
     const display = meta.display;
     if (display && typeof display === "object" && !Array.isArray(display)) {

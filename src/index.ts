@@ -16,7 +16,7 @@
 // list. Add `getVerboseHelp` / `getDocsUrl` getters in main.ts if read access
 // is later needed.
 export { createCli, main, buildModuleCommand, validateModuleId, collectInput, reconvertEnumValues, applyToolkitIntegration, setVerboseHelp, setDocsUrl, emitErrorJson, emitErrorTty } from "./main.js";
-export type { OptionConfig, CreateCliOptions, APCore } from "./main.js";
+export type { OptionConfig, CreateCliOptions, APCore, ApplyToolkitIntegrationOptions } from "./main.js";
 
 // Command grouping (GroupedModuleGroup is the default click.Group; LazyModuleGroup
 // is the base class, available for downstream consumers that need to subclass it).
@@ -44,8 +44,8 @@ export {
   registerValidateCommand,
 } from "./discovery.js";
 
-// Output formatting (top-level formatter only — per-type helpers are internal)
-export { formatExecResult } from "./output.js";
+// Output formatting — D1-007 cross-SDK parity (Rust exports all four; TS now matches).
+export { formatExecResult, formatModuleList, formatModuleDetail, resolveFormat } from "./output.js";
 
 // Schema handling
 export { resolveRefs } from "./ref-resolver.js";

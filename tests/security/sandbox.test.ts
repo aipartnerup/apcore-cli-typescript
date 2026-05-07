@@ -57,6 +57,41 @@ describe("Sandbox", () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // D1-004 — builder methods (Python parity)
+  // -------------------------------------------------------------------------
+  describe("builder methods (D1-004)", () => {
+    it("withExtensionsRoot is chainable and returns the same Sandbox instance", () => {
+      const sandbox = new Sandbox(false);
+      const returned = sandbox.withExtensionsRoot("/tmp/exts");
+      expect(returned).toBe(sandbox);
+    });
+
+    it("withMaxOutputBytes is chainable and returns the same Sandbox instance", () => {
+      const sandbox = new Sandbox(false);
+      const returned = sandbox.withMaxOutputBytes(1024);
+      expect(returned).toBe(sandbox);
+    });
+
+    it("supports fluent chaining of both builder methods", () => {
+      const sandbox = new Sandbox(true, 5)
+        .withExtensionsRoot("/tmp/exts")
+        .withMaxOutputBytes(2048);
+      expect(sandbox).toBeInstanceOf(Sandbox);
+    });
+
+    it("withExtensionsRoot accepts null to clear an explicit override", () => {
+      const sandbox = new Sandbox(false)
+        .withExtensionsRoot("/tmp/x")
+        .withExtensionsRoot(null);
+      expect(sandbox).toBeInstanceOf(Sandbox);
+    });
+
+    it("exposes DEFAULT_MAX_OUTPUT_BYTES = 64 MiB", () => {
+      expect(Sandbox.DEFAULT_MAX_OUTPUT_BYTES).toBe(64 * 1024 * 1024);
+    });
+  });
+
 });
 
 // ---------------------------------------------------------------------------
@@ -174,6 +209,49 @@ describe("Sandbox subprocess wiring (mocked spawn)", () => {
     expect(forwardedRoot).toBeDefined();
     expect(path.isAbsolute(forwardedRoot as string)).toBe(true);
     expect(forwardedRoot).not.toBe("./relative/extensions");
+
+    if (savedRoot === undefined) {
+      delete process.env.APCORE_EXTENSIONS_ROOT;
+    } else {
+      process.env.APCORE_EXTENSIONS_ROOT = savedRoot;
+    }
+    __spawnImpl = null;
+  });
+
+  // -------------------------------------------------------------------------
+  // D1-004 — withExtensionsRoot wins over the inherited env var
+  // -------------------------------------------------------------------------
+  it("withExtensionsRoot overrides APCORE_EXTENSIONS_ROOT in the child env (D1-004)", async () => {
+    const path = await import("node:path");
+
+    const fakeChild = makeFakeChild();
+    let capturedEnv: NodeJS.ProcessEnv | undefined;
+    __spawnImpl = (..._args: unknown[]) => {
+      const opts = _args[2] as { env?: NodeJS.ProcessEnv } | undefined;
+      capturedEnv = opts?.env;
+      return fakeChild;
+    };
+
+    const savedRoot = process.env.APCORE_EXTENSIONS_ROOT;
+    process.env.APCORE_EXTENSIONS_ROOT = "./relative/from-env";
+
+    const sandbox = new Sandbox(true, 5).withExtensionsRoot("./relative/from-builder");
+    const promise = sandbox.execute("test.mod", {}, mockExecutor);
+
+    for (let i = 0; i < 10 && capturedEnv === undefined; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
+
+    fakeChild.stdout.emit("data", Buffer.from("{}"));
+    fakeChild.emit("close", 0);
+    await promise.catch(() => undefined);
+
+    expect(capturedEnv).toBeDefined();
+    const forwardedRoot = capturedEnv?.APCORE_EXTENSIONS_ROOT;
+    expect(forwardedRoot).toBeDefined();
+    expect(path.isAbsolute(forwardedRoot as string)).toBe(true);
+    expect(forwardedRoot).toMatch(/from-builder$/);
+    expect(forwardedRoot).not.toMatch(/from-env$/);
 
     if (savedRoot === undefined) {
       delete process.env.APCORE_EXTENSIONS_ROOT;

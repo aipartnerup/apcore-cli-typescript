@@ -20,7 +20,7 @@ const SANDBOX_DENY_PREFIX = "APCORE_AUTH_";
 // Explicit deny-list for known credential keys (defense-in-depth mirroring Rust).
 const SANDBOX_DENY_KEYS: readonly string[] = ["APCORE_AUTH_API_KEY"];
 
-const SANDBOX_OUTPUT_SIZE_LIMIT = 64 * 1024 * 1024; // 64 MiB
+const SANDBOX_DEFAULT_OUTPUT_SIZE_LIMIT = 64 * 1024 * 1024; // 64 MiB
 
 // ---------------------------------------------------------------------------
 // Sandbox
@@ -35,12 +35,42 @@ const SANDBOX_OUTPUT_SIZE_LIMIT = 64 * 1024 * 1024; // 64 MiB
  * `--internal-sandbox-runner <module_id>`.
  */
 export class Sandbox {
+  /** Default post-capture stdout+stderr byte budget for sandboxed children. */
+  static readonly DEFAULT_MAX_OUTPUT_BYTES = SANDBOX_DEFAULT_OUTPUT_SIZE_LIMIT;
+
   private readonly enabled: boolean;
   private readonly timeoutSeconds: number;
+  private extensionsRoot: string | null = null;
+  private maxOutputBytes: number = SANDBOX_DEFAULT_OUTPUT_SIZE_LIMIT;
 
   constructor(enabled = false, timeoutSeconds = 300) {
     this.enabled = enabled;
     this.timeoutSeconds = timeoutSeconds;
+  }
+
+  /**
+   * Set the extensions root that is forwarded to the sandboxed runner via
+   * `APCORE_EXTENSIONS_ROOT`. The path is resolved to absolute when injected
+   * so the child (whose cwd is the fresh sandbox tempdir) can locate modules.
+   *
+   * Builder-style — returns `this` so call sites can chain. Mirrors Python's
+   * `Sandbox.with_extensions_root` (D1-004 cross-SDK parity).
+   */
+  withExtensionsRoot(extensionsRoot: string | null): this {
+    this.extensionsRoot = extensionsRoot;
+    return this;
+  }
+
+  /**
+   * Cap the post-capture stdout+stderr byte budget for the sandboxed
+   * subprocess. Default: 64 MiB (`Sandbox.DEFAULT_MAX_OUTPUT_BYTES`).
+   *
+   * Builder-style — returns `this`. Mirrors Python's
+   * `Sandbox.with_max_output_bytes` (D1-004 cross-SDK parity).
+   */
+  withMaxOutputBytes(maxOutputBytes: number): this {
+    this.maxOutputBytes = maxOutputBytes;
+    return this;
   }
 
   /**
@@ -74,10 +104,13 @@ export class Sandbox {
     // child env. The child's cwd is the fresh tmpDir, so any relative path
     // (default `./extensions` or user-provided `./relative/foo`) would
     // otherwise resolve under the empty tmpDir → MODULE_NOT_FOUND.
-    // Note: a future Sandbox.withExtensionsRoot(path) builder (Python parity)
-    // could replace this env-based wiring; out of scope for this fix.
+    //
+    // Precedence: explicit `withExtensionsRoot(...)` builder value wins over
+    // an inherited APCORE_EXTENSIONS_ROOT env var (mirrors Python parity).
     const { resolve: resolvePath } = await import("node:path");
-    if (env.APCORE_EXTENSIONS_ROOT) {
+    if (this.extensionsRoot !== null) {
+      env.APCORE_EXTENSIONS_ROOT = resolvePath(this.extensionsRoot);
+    } else if (env.APCORE_EXTENSIONS_ROOT) {
       env.APCORE_EXTENSIONS_ROOT = resolvePath(env.APCORE_EXTENSIONS_ROOT);
     }
     const binaryPath = process.argv[1];
@@ -93,10 +126,11 @@ export class Sandbox {
     let stderrBytes = 0;
     let sizeExceeded = false;
 
+    const outputCap = this.maxOutputBytes;
     child.stdout.on("data", (chunk: Buffer) => {
       if (sizeExceeded) return;
       stdoutBytes += chunk.length;
-      if (stdoutBytes > SANDBOX_OUTPUT_SIZE_LIMIT) {
+      if (stdoutBytes > outputCap) {
         sizeExceeded = true;
         child.kill("SIGKILL");
         return;
@@ -104,12 +138,12 @@ export class Sandbox {
       stdout += chunk.toString();
     });
     // stderr cap: hostile modules spamming stderr can OOM the parent
-    // without an upper bound. Apply the same 64 MiB ceiling as stdout
+    // without an upper bound. Apply the same per-stream ceiling as stdout
     // (independent counter so each stream gets its full budget).
     child.stderr.on("data", (chunk: Buffer) => {
       if (sizeExceeded) return;
       stderrBytes += chunk.length;
-      if (stderrBytes > SANDBOX_OUTPUT_SIZE_LIMIT) {
+      if (stderrBytes > outputCap) {
         sizeExceeded = true;
         child.kill("SIGKILL");
         return;
@@ -135,7 +169,10 @@ export class Sandbox {
         try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
 
         if (sizeExceeded) {
-          reject(new ModuleExecutionError(`Sandbox module '${moduleId}' output exceeded 64MiB limit.`));
+          const limitMiB = Math.floor(outputCap / (1024 * 1024));
+          reject(new ModuleExecutionError(
+            `Sandbox module '${moduleId}' output exceeded ${limitMiB}MiB limit.`,
+          ));
           return;
         }
         if (code !== 0) {
