@@ -164,8 +164,11 @@ export interface OptionConfig {
 
 /**
  * Emit structured JSON error to stderr for AI agents.
+ *
+ * Module-private. The only consumer is buildModuleCommand's action handler
+ * within this same file (audit D9-W2).
  */
-export function emitErrorJson(e: unknown, exitCode: number): void {
+function emitErrorJson(e: unknown, exitCode: number): void {
   const err = e instanceof Error ? e : new Error(String(e));
   const errRecord = err as unknown as Record<string, unknown>;
   const code = errRecord.code ?? "UNKNOWN";
@@ -186,8 +189,11 @@ export function emitErrorJson(e: unknown, exitCode: number): void {
 
 /**
  * Emit human-readable error to stderr with guidance fields.
+ *
+ * Module-private. The only consumer is buildModuleCommand's action handler
+ * within this same file (audit D9-W2).
  */
-export function emitErrorTty(e: unknown, exitCode: number): void {
+function emitErrorTty(e: unknown, exitCode: number): void {
   const err = e instanceof Error ? e : new Error(String(e));
   const errRecord = err as unknown as Record<string, unknown>;
   const code = errRecord.code;
