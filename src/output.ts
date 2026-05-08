@@ -1,12 +1,49 @@
 /**
- * TTY-adaptive output formatting (table/json/csv/yaml/jsonl).
+ * TTY-adaptive output formatting (table/json/csv/yaml/jsonl/markdown/skill).
  *
- * Protocol spec: Output formatting (FE-09 enhanced)
+ * Protocol spec: Output formatting (FE-08 / FE-09 enhanced)
  */
 
 import yaml from "js-yaml";
 import { EXIT_CODES } from "./errors.js";
 import type { ModuleDescriptor, PreflightResult } from "./cli.js";
+
+const TOOLKIT_MISSING_HINT =
+  "The 'markdown' and 'skill' output formats require the apcore-toolkit " +
+  "peer dependency. Install with: npm install apcore-toolkit@^0.6";
+
+/**
+ * Adapt the registry's `ModuleDescriptor` to the toolkit's `ScannedModule`
+ * shape so the surface-aware formatters (`formatModule` / `formatModules`)
+ * can render it. Both shapes share most fields; the toolkit additionally
+ * needs `target`, `suggestedAlias`, `warnings`, and `display`.
+ */
+function descriptorToScanned(
+  m: ModuleDescriptor,
+): import("apcore-toolkit").ScannedModule {
+  const metadata = (m.metadata ?? {}) as Record<string, unknown>;
+  const display = (metadata["display"] ?? null) as
+    | Record<string, unknown>
+    | null;
+  return {
+    moduleId: m.id,
+    description: m.description ?? "",
+    inputSchema: (m.inputSchema ?? {}) as Record<string, unknown>,
+    outputSchema: (m.outputSchema ?? {}) as Record<string, unknown>,
+    tags: (m.tags ?? []) as readonly string[],
+    target: "",
+    version: "1.0.0",
+    annotations:
+      (m.annotations as unknown as import("apcore-toolkit").ScannedModule["annotations"]) ??
+      null,
+    documentation: null,
+    suggestedAlias: null,
+    examples: [],
+    metadata,
+    display,
+    warnings: [],
+  };
+}
 
 /**
  * Stringify a CSV cell value: scalars via String(), nested objects/arrays via
@@ -73,13 +110,13 @@ function formatTable(
 /**
  * Format and print a list of modules.
  */
-export function formatModuleList(
+export async function formatModuleList(
   modules: ModuleDescriptor[],
   format: string,
   filterTags?: string[],
   showDeps = false,
   exposureFilter?: { isExposed(moduleId: string): boolean },
-): void {
+): Promise<void> {
   if (format === "table") {
     if (modules.length === 0 && filterTags && filterTags.length > 0) {
       process.stdout.write(
@@ -124,6 +161,17 @@ export function formatModuleList(
       return entry;
     });
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+  } else if (format === "markdown" || format === "skill") {
+    let toolkit: typeof import("apcore-toolkit");
+    try {
+      toolkit = await import("apcore-toolkit");
+    } catch {
+      throw new Error(TOOLKIT_MISSING_HINT);
+    }
+    const scanned = modules.map(descriptorToScanned);
+    process.stdout.write(
+      (toolkit.formatModules(scanned, { style: format, display: true }) as string) + "\n",
+    );
   }
 }
 
@@ -151,10 +199,10 @@ function annotationsToDict(
 /**
  * Format and print full module metadata.
  */
-export function formatModuleDetail(
+export async function formatModuleDetail(
   moduleDef: ModuleDescriptor,
   format: string,
-): void {
+): Promise<void> {
   if (format === "table") {
     process.stdout.write(`\nModule: ${moduleDef.id}\n`);
     process.stdout.write(`\nDescription:\n  ${moduleDef.description}\n`);
@@ -227,6 +275,16 @@ export function formatModuleDetail(
     }
 
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+  } else if (format === "markdown" || format === "skill") {
+    let toolkit: typeof import("apcore-toolkit");
+    try {
+      toolkit = await import("apcore-toolkit");
+    } catch {
+      throw new Error(TOOLKIT_MISSING_HINT);
+    }
+    process.stdout.write(
+      (toolkit.formatModule(descriptorToScanned(moduleDef), { style: format, display: true }) as string) + "\n",
+    );
   }
 }
 

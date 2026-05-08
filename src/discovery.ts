@@ -84,7 +84,10 @@ export function registerListCommand(
     .description("List available modules in the registry.")
     .option("--tag <tag>", "Filter modules by tag (AND logic). Repeatable.", collectTag, [])
     .option("--flat", "Show flat list (no grouping).", false)
-    .option("--format <format>", "Output format.", undefined)
+    .addOption(
+      new Option("--format <format>", "Output format.")
+        .choices(["table", "json", "csv", "yaml", "jsonl", "markdown", "skill"]),
+    )
     .option("-s, --search <query>", "Filter by substring match on ID and description.")
     .addOption(
       new Option("--status <status>", "Filter by module status.")
@@ -209,7 +212,7 @@ export function registerListCommand(
 
       const fmt = resolveFormat(opts.format);
       const filterTagsArg = opts.tag.length > 0 ? opts.tag : undefined;
-      formatModuleList(modules, fmt, filterTagsArg, opts.deps, showExposureCol ? exposureFilter : undefined);
+      void formatModuleList(modules, fmt, filterTagsArg, opts.deps, showExposureCol ? exposureFilter : undefined);
     });
   apcliGroup.addCommand(listCmd);
 }
@@ -224,7 +227,10 @@ export function registerDescribeCommand(
   const describeCmd = new Command("describe")
     .description("Show metadata, schema, and annotations for a module.")
     .argument("<module-id>", "Module ID to describe")
-    .option("--format <format>", "Output format.", undefined)
+    .addOption(
+      new Option("--format <format>", "Output format.")
+        .choices(["table", "json", "csv", "yaml", "jsonl", "markdown", "skill"]),
+    )
     .action((moduleId: string, opts: { format?: string }) => {
       validateModuleId(moduleId);
 
@@ -237,7 +243,7 @@ export function registerDescribeCommand(
       }
 
       const fmt = resolveFormat(opts.format);
-      formatModuleDetail(moduleDef, fmt);
+      void formatModuleDetail(moduleDef, fmt);
     });
   apcliGroup.addCommand(describeCmd);
 }

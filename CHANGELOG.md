@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`apcli list` and `apcli describe` `--format` choices** are now validated
+  via Commander's `Option.choices(...)` against the canonical set
+  `[table, json, csv, yaml, jsonl, markdown, skill]`. Unknown values exit
+  with code 2 instead of silently no-op'ing. Issue
+  [aiperceivable/apcore-cli#20](https://github.com/aiperceivable/apcore-cli/issues/20).
 - **Dependency bump**: peer-dep `apcore-js >= 0.21.0` (was `>= 0.19.0`) and the
   optional `apcore-toolkit >= 0.6.0` (was `>= 0.5.0`). Aligns with upstream
   `apcore 0.21.0` (Module.preview / PreflightResult.predicted_changes) and
@@ -28,6 +33,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--format markdown` and `--format skill`** for `apcli list` and `apcli describe`
+  (issue [aiperceivable/apcore-cli#20](https://github.com/aiperceivable/apcore-cli/issues/20)).
+  Both delegate to `apcore-toolkit` (`formatModule` / `formatModules`, peer dep
+  ≥0.6) so the output is byte-identical to the same toolkit call in the Python
+  and Rust SDKs. `--format skill` emits vendor-neutral SKILL.md content
+  directly loadable by Claude Code (`.claude/skills/<id>/SKILL.md`) and
+  Gemini CLI (`.gemini/skills/<id>/SKILL.md`):
+
+  ```bash
+  apcore-cli apcli describe users.create --format skill > .claude/skills/users.create/SKILL.md
+  ```
+
+  A new internal adapter `descriptorToScanned()` maps `ModuleDescriptor`
+  to the toolkit's `ScannedModule`. The `formatModuleList` and
+  `formatModuleDetail` functions are now `async` to support the dynamic
+  toolkit import (the existing five-format paths remain effectively
+  synchronous and complete before the returned promise resolves).
 - **Issue #18 — host-app `--version` opt-in**: new `version?: string` field on
   `CreateCliOptions`. When supplied, registers `-V/--version` with the host's
   version string. **When omitted, the `--version` flag is no longer registered**
