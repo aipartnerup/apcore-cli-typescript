@@ -6,6 +6,7 @@
 
 import type { OptionConfig } from "./main.js";
 import { EXIT_CODES } from "./errors.js";
+import { warn as logWarn } from "./logger.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -89,6 +90,19 @@ export function schemaToCliOptions(
   const requiredList = (schema.required ?? []) as string[];
   const options: OptionConfig[] = [];
   const flagNames: Record<string, string> = {};
+
+  // Cross-SDK parity (D11-W4): warn when a name appears in `required` but
+  // has no matching entry in `properties`. Mirrors Python schema_parser.py
+  // (lines 93-98) and Rust schema_parser.rs (lines 220-228); without this
+  // loop schemas like `{required: ["foo"]}` with no `properties.foo` parse
+  // silently in the TS SDK only.
+  for (const reqName of requiredList) {
+    if (!(reqName in properties)) {
+      logWarn(
+        `Required property '${reqName}' not found in properties, skipping.`,
+      );
+    }
+  }
 
   for (const [propName, propSchema] of Object.entries(properties)) {
     const flagName = "--" + propName.replace(/_/g, "-");

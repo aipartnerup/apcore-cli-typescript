@@ -400,3 +400,57 @@ describe("schema_to_cli_options no-flag collision (D11-005)", () => {
     expect(result).toHaveLength(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// D11-W4 — required-but-missing property warning loop (cross-SDK parity)
+// ---------------------------------------------------------------------------
+//
+// Python (schema_parser.py:93-98) and Rust (schema_parser.rs:220-228) iterate
+// the schema's `required` list and warn for entries not present in
+// `properties`. The TS SDK previously skipped this loop, so schemas with
+// `{required: ["foo"]}` and no `properties.foo` parsed silently. This block
+// asserts the warning fires.
+
+describe("schemaToCliOptions() — required property not in properties (D11-W4)", () => {
+  it("warns when a required entry has no matching property", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const schema = {
+      required: ["foo"],
+      properties: { bar: { type: "string" } },
+    };
+    const result = schemaToCliOptions(schema);
+    // Only `bar` was a real property — that one option still renders.
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("bar");
+
+    const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(stderrText).toContain("foo");
+    expect(stderrText).toMatch(/required.*not.*found in properties|required.*not.*defined in properties/i);
+    stderrSpy.mockRestore();
+  });
+
+  it("does not warn when every required entry has a matching property", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const schema = {
+      required: ["foo"],
+      properties: { foo: { type: "string" } },
+    };
+    schemaToCliOptions(schema);
+    const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(stderrText).not.toMatch(/required.*not.*(found|defined) in properties/i);
+    stderrSpy.mockRestore();
+  });
+
+  it("warns once per missing required entry when multiple are missing", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const schema = {
+      required: ["foo", "baz"],
+      properties: { bar: { type: "string" } },
+    };
+    schemaToCliOptions(schema);
+    const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(stderrText).toContain("foo");
+    expect(stderrText).toContain("baz");
+    stderrSpy.mockRestore();
+  });
+});
