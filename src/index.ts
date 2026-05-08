@@ -24,7 +24,7 @@ export { LazyModuleGroup, GroupedModuleGroup, LazyGroup } from "./cli.js";
 export type { Registry, Executor, ModuleDescriptor, PreflightResult, PreflightCheck, PipelineTrace, PipelineTraceStep, StrategyInfo, StrategyStep } from "./cli.js";
 
 // Built-in apcli group (FE-13)
-export { ApcliGroup, RESERVED_GROUP_NAMES } from "./builtin-group.js";
+export { ApcliGroup, ApcliGroupError, RESERVED_GROUP_NAMES } from "./builtin-group.js";
 export type { ApcliConfig, ApcliMode } from "./builtin-group.js";
 
 // Approval handler (FE-11)

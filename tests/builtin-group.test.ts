@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   ApcliGroup,
+  ApcliGroupError,
   APCLI_SUBCOMMAND_NAMES,
   DEFAULT_BUILTIN_GROUP_NAME,
   RESERVED_GROUP_NAMES,
@@ -788,5 +789,40 @@ describe("ApcliGroup mode error messages (Issue 8)", () => {
     expect(allWrites).not.toContain("cli.apcli.mode");
     exitSpy.mockRestore();
     stderrSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ApcliGroupError — typed exception parity with Rust (D1-info-1)
+// ---------------------------------------------------------------------------
+
+describe("ApcliGroupError", () => {
+  it("invalid builtinGroupName throws ApcliGroupError, not plain Error", () => {
+    // "Bad-NAME" fails the lowercase regex /^[a-z][a-z0-9_-]*$/ (uppercase).
+    expect(() =>
+      ApcliGroup.fromCliConfig(true, {
+        registryInjected: false,
+        name: "Bad-NAME",
+      }),
+    ).toThrow(ApcliGroupError);
+  });
+
+  it("ApcliGroupError instance is also instanceof Error (catch parity)", () => {
+    // Existing `catch (e) { ... }` blocks rely on `instanceof Error` and
+    // common Error fields like .name and .message. Verify the typed
+    // subclass keeps that surface intact.
+    let caught: unknown = null;
+    try {
+      ApcliGroup.fromCliConfig(true, {
+        registryInjected: false,
+        name: "1bad", // leading digit fails regex
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApcliGroupError);
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).name).toBe("ApcliGroupError");
+    expect((caught as Error).message).toContain("builtinGroupName");
   });
 });

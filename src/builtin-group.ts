@@ -14,6 +14,26 @@ import { EXIT_CODES } from "./errors.js";
 import { warn } from "./logger.js";
 
 // ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown for invalid built-in apcli group configuration (e.g. invalid
+ * `builtinGroupName` regex match). Cross-SDK parity with Rust's
+ * `ApcliGroupError` (D1-info-1, 2026-05-08).
+ *
+ * Extends `Error` so existing `catch (e)` blocks continue to work via
+ * `instanceof Error`; callers that want to distinguish apcli config
+ * errors from generic errors can switch on `instanceof ApcliGroupError`.
+ */
+export class ApcliGroupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApcliGroupError";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Types & constants
 // ---------------------------------------------------------------------------
 
@@ -98,7 +118,7 @@ export function setReservedGroupNames(names: ReadonlySet<string>): void {
 const _NAME_REGEX = /^[a-z][a-z0-9_-]*$/;
 function _validateBuiltinGroupName(name: string): void {
   if (!name || !_NAME_REGEX.test(name)) {
-    throw new Error(
+    throw new ApcliGroupError(
       `builtinGroupName ${JSON.stringify(name)} must match /^[a-z][a-z0-9_-]*$/ ` +
         "(non-empty, lowercase, alphanumeric + '_' / '-', leading letter).",
     );
