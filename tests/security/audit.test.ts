@@ -6,6 +6,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import {
   AuditLogger,
   canonicalizeForHash,
@@ -95,6 +99,28 @@ describe("AuditLogger", () => {
     // Regression: A-002 — param name must match spec canonical name
     const logger = new AuditLogger(logPath);
     expect(logger).toBeInstanceOf(AuditLogger);
+  });
+
+  it("getUser source falls back through USER → LOGNAME → USERNAME (D11-008)", () => {
+    // Regression: spec security.md canonical fallback chain is
+    //   getlogin → pwd.getpwuid(getuid).pw_name → USER → LOGNAME → USERNAME → unknown
+    // The TS port previously skipped LOGNAME, breaking parity with
+    // Python/Rust/Go on systems (e.g. some CI runners) where USER and
+    // USERNAME are unset but LOGNAME is set.
+    //
+    // os.userInfo is a non-configurable ESM binding under vitest, so the
+    // catch branch cannot be exercised at runtime here. Verify the
+    // canonical chain in source form instead — this catches regressions
+    // where the chain order changes or LOGNAME is dropped.
+    const auditSrc = fs.readFileSync(
+      path.join(__dirname, "..", "..", "src", "security", "audit.ts"),
+      "utf-8",
+    );
+    // The fallback expression must reference USER then LOGNAME then USERNAME
+    // in that order, with "unknown" as the terminal default.
+    const fallbackPattern =
+      /process\.env\.USER\s*\?\?\s*process\.env\.LOGNAME\s*\?\?\s*process\.env\.USERNAME\s*\?\?\s*"unknown"/;
+    expect(auditSrc).toMatch(fallbackPattern);
   });
 });
 

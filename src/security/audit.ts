@@ -139,7 +139,16 @@ export class AuditLogger {
     try {
       return os.userInfo().username;
     } catch {
-      return process.env.USER ?? process.env.USERNAME ?? "unknown";
+      // Spec security.md (D11-W1): canonical fallback chain is
+      //   getlogin → pwd.getpwuid(getuid).pw_name → USER → LOGNAME → USERNAME → unknown
+      // os.userInfo() collapses the first two POSIX steps in Node; the env-var
+      // tail must include LOGNAME between USER and USERNAME for cross-SDK parity.
+      return (
+        process.env.USER ??
+        process.env.LOGNAME ??
+        process.env.USERNAME ??
+        "unknown"
+      );
     }
   }
 }
