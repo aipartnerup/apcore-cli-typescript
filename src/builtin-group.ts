@@ -485,7 +485,11 @@ export class ApcliGroup {
    */
   private _parseEnv(raw: string | undefined): "all" | "none" | null {
     if (raw === undefined || raw === "") return null;
-    const normalized = raw.toLowerCase();
+    // Spec invariant 2 (features/builtin-group.md): env-var parser is
+    // case-insensitive and trim-on-read. Trim before lowercase so values
+    // like "  all  " or "\tshow\n" resolve correctly across SDKs.
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "") return null;
     if (normalized === "show" || normalized === "1" || normalized === "true") {
       return "all";
     }
