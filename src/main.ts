@@ -504,11 +504,6 @@ export function createCli(
 
   _registerApcliSubcommands(apcliGroup, apcliCfg, registry, executor, exposureFilter);
 
-  // FE-13 §11.2: standalone-mode deprecation shims for the 13 former
-  // root-level commands. No-op in embedded mode so branded CLIs never surface
-  // apcore-cli deprecation warnings to their end users.
-  _registerDeprecationShims(program, apcliGroup, registryInjected, resolvedProgName);
-
   // Footer hints for discoverability
   program.addHelpText("after", [
     "",
@@ -542,26 +537,10 @@ export function createCli(
       }
       const existing = program.commands.find((c) => c.name() === cmdName);
       if (existing) {
-        // Deprecation shims are auto-registered in standalone mode and should
-        // yield to user-supplied extraCommands with the same name — they're
-        // transitional scaffolding, not a real collision. Non-shim collisions
-        // are still hard-rejected.
-        const isShim =
-          (existing as unknown as { __isDeprecationShim?: boolean }).__isDeprecationShim === true;
-        if (isShim) {
-          logWarn(
-            `extraCommands '${cmdName}' overrides the deprecation shim for the same name. ` +
-              `The shim will be removed.`,
-          );
-          const cmds = program.commands as unknown as Command[];
-          const idx = cmds.indexOf(existing);
-          if (idx >= 0) cmds.splice(idx, 1);
-        } else {
-          process.stderr.write(
-            `Error: extraCommands name '${cmdName}' collides with an existing command\n`,
-          );
-          process.exit(EXIT_CODES.INVALID_CLI_INPUT);
-        }
+        process.stderr.write(
+          `Error: extraCommands name '${cmdName}' collides with an existing command\n`,
+        );
+        process.exit(EXIT_CODES.INVALID_CLI_INPUT);
       }
       program.addCommand(cmd);
     }
@@ -679,98 +658,6 @@ function _registerApcliSubcommands(
 
     entry.register(apcliGroup, registry, executor);
   }
-}
-
-// ---------------------------------------------------------------------------
-// FE-13 §11.2 deprecation shims (standalone-mode only)
-// ---------------------------------------------------------------------------
-
-/**
- * Canonical list of root-level command names that were "flat" in pre-v0.7 and
- * moved under the `apcli` group in v0.7. A thin shim at the root forwards
- * invocations to the corresponding `apcli <name>` subcommand after printing a
- * deprecation warning. Removed in v0.8 per spec §11.3.
- */
-const _DEPRECATED_ROOT_COMMANDS: readonly string[] = [
-  "list",
-  "describe",
-  "exec",
-  "init",
-  "validate",
-  "health",
-  "usage",
-  "enable",
-  "disable",
-  "reload",
-  "config",
-  "completion",
-  "describe-pipeline",
-] as const;
-
-/**
- * Register thin root-level deprecation shims for the 13 former built-in
- * commands. Each shim writes the spec §11.2 warning to stderr then forwards
- * to the matching `apcli <name>` subcommand, preserving positional args +
- * options via a direct `parseAsync` on the apcli subcommand.
- *
- * No-op in embedded mode (`registryInjected === true`) so integrators' end
- * users never see apcore-cli deprecation warnings for commands they were
- * never meant to know about.
- */
-function _registerDeprecationShims(
-  root: Command,
-  apcliGroup: Command,
-  registryInjected: boolean,
-  cliName: string,
-): void {
-  if (registryInjected) return;
-  for (const name of _DEPRECATED_ROOT_COMMANDS) {
-    const apcliSub = apcliGroup.commands.find((c) => c.name() === name);
-    if (!apcliSub) continue; // subcommand not registered (e.g. executor-required without executor)
-    if (root.commands.some((c) => c.name() === name)) continue; // collision guard
-
-    const shim = root
-      .command(name)
-      .description(`[DEPRECATED] Use '${cliName} apcli ${name}' instead.`)
-      .allowUnknownOption(true)
-      .allowExcessArguments(true)
-      .helpOption(false);
-    // Tag the shim so extraCommands collision detection can tell a shim apart
-    // from a user-registered command and drop the shim in favor of the user's
-    // extraCommand (with a WARN) rather than hard-failing with "collides".
-    (shim as unknown as Record<string, unknown>).__isDeprecationShim = true;
-    shim.action(async function (this: Command) {
-      process.stderr.write(
-        `WARNING: '${name}' as a root-level command is deprecated. ` +
-          `Use '${cliName} apcli ${name}' instead.\n` +
-          `         Will be removed in v0.8. ` +
-          `See: https://aiperceivable.github.io/apcore-cli/features/builtin-group/#11-migration\n`,
-      );
-      // Forward: reconstruct the tail from this shim's parsed args + the raw
-      // passthrough args Commander stashes when allowUnknownOption is on.
-      // This works for both real process.argv invocations and test-time
-      // `parseAsync([...], { from: "user" })` calls.
-      const tail = _collectShimForwardArgs(this);
-      await apcliSub.parseAsync(tail, { from: "user" });
-    });
-  }
-}
-
-/**
- * Collect the argv tail to forward from a shim to its apcli counterpart.
- * Uses Commander's own `.args` (positional + unknown flags that were left
- * intact because the shim has `allowUnknownOption(true)`). Falls back to
- * slicing `process.argv` from the shim name onward when `.args` is empty —
- * this preserves nested sub-subcommand paths such as `config get foo` in
- * real invocations where the shell supplied full argv.
- */
-function _collectShimForwardArgs(shim: Command): string[] {
-  const shimArgs = (shim.args ?? []).slice();
-  if (shimArgs.length > 0) return shimArgs;
-  const shimName = shim.name();
-  const idx = process.argv.indexOf(shimName);
-  if (idx < 0) return [];
-  return process.argv.slice(idx + 1);
 }
 
 // ---------------------------------------------------------------------------

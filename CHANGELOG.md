@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0] - 2026-05-08
 
+### Removed (BREAKING)
+
+- **D9-002 — root-level deprecation shims removed (FE-13 §11.3).** Pre-v0.8
+  `createCli()` registered 13 hidden root-level commands (`list`, `describe`,
+  `exec`, `init`, `validate`, `health`, `usage`, `enable`, `disable`,
+  `reload`, `config`, `completion`, `describe-pipeline`) that printed a
+  `WARNING: '<name>' as a root-level command is deprecated. ... Will be
+  removed in v0.8` line on stderr and forwarded to `apcli <name>`. Per
+  PROTOCOL_SPEC FE-13 §11.3 these shims are removed in v0.8 — the `apcli`
+  sub-group (or the renamed `builtinGroupName`) is now the only path to
+  built-in commands. Internal `_DEPRECATED_ROOT_COMMANDS`,
+  `_registerDeprecationShims`, `_collectShimForwardArgs`, and the
+  `__isDeprecationShim` collision-detection branch in `createCli`'s
+  `extraCommands` handler are deleted.
+
 ### Added
 
 - **`builtinGroupName?: string` option on `createCli`** — downstream branded CLIs that embed apcore-cli can now expose the built-in commands under a custom namespace (e.g. `mycorp-cli admin health` instead of `mycorp-cli apcli health`). `ApcliGroup` gains a `name` getter and the constructor option is threaded through `fromCliConfig` / `fromYaml` / `tryFromYaml` / `_build`. Default `"apcli"` is unchanged. Validated against `/^[a-z][a-z0-9_-]*$/`; invalid values exit 2. Two new module-level accessors `getReservedGroupNames()` / `setReservedGroupNames()` expose the live reserved-set so `cli.ts`'s `assertNotReserved` and `listCommands` honour the renamed group. Env var `APCORE_CLI_APCLI` and config keys `apcli.*` deliberately do NOT rename — they are apcore-cli-internal toggles, not user-facing. Cross-SDK parity with Python `create_cli(builtin_group_name=...)`. New `DEFAULT_BUILTIN_GROUP_NAME` constant exported from `./builtin-group.js`.

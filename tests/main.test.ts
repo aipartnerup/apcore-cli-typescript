@@ -756,16 +756,16 @@ describe("createCli FE-13 apcli group integration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// FE-13 deprecation-shims: root-level shim commands forwarding to apcli
+// FE-13 §11.3 — deprecation shims removed in v0.8
 // ---------------------------------------------------------------------------
+//
+// Pre-v0.8 the standalone CLI registered 13 root-level shim commands that
+// forwarded to `apcli <name>` after printing a deprecation warning. Per
+// PROTOCOL_SPEC FE-13 §11.3 these shims are removed in v0.8 — the only path
+// to the built-in commands is the `apcli` sub-group (or the renamed
+// `builtinGroupName`).
 
-describe("createCli FE-13 deprecation shims", () => {
-  const DEPRECATED = [
-    "list", "describe", "exec", "init", "validate",
-    "health", "usage", "enable", "disable", "reload",
-    "config", "completion", "describe-pipeline",
-  ];
-
+describe("createCli FE-13 §11.3 — no root-level deprecation shims", () => {
   function makeRegistry() {
     return {
       listModules: () => [],
@@ -781,162 +781,46 @@ describe("createCli FE-13 deprecation shims", () => {
     };
   }
 
-  function getRootShimNames(cli: ReturnType<typeof createCli>): string[] {
+  function getNonGroupRootCommandNames(cli: ReturnType<typeof createCli>): string[] {
     return cli.commands
       .filter((c) => c.name() !== "apcli" && c.name() !== "help")
       .map((c) => c.name());
   }
 
-  it("standalone mode registers root-level shims only for apcli subcommands that were actually registered (no-executor subset)", () => {
-    // Standalone (no registry/executor) → apcli registrars skip executor-required
-    // entries silently, so the shim set is standalone-available names only.
-    // Non-executor apcli subcommands: list, describe, init, completion.
+  it("standalone mode registers ZERO root-level shim commands (apcli sub-group is the only path)", () => {
     const cli = createCli(undefined, "test-cli");
-    const shimNames = getRootShimNames(cli);
-    expect(shimNames).toContain("list");
-    expect(shimNames).toContain("describe");
-    expect(shimNames).toContain("init");
-    expect(shimNames).toContain("completion");
-    // Executor-required ones should NOT be registered as shims in standalone
-    // (their apcli counterpart also wasn't registered).
-    expect(shimNames).not.toContain("exec");
-    expect(shimNames).not.toContain("validate");
-    expect(shimNames).not.toContain("health");
-    expect(shimNames).not.toContain("usage");
-    expect(shimNames).not.toContain("enable");
-    expect(shimNames).not.toContain("disable");
-    expect(shimNames).not.toContain("reload");
-    expect(shimNames).not.toContain("config");
-    expect(shimNames).not.toContain("describe-pipeline");
+    const rootCmds = getNonGroupRootCommandNames(cli);
+    expect(rootCmds).toEqual([]);
   });
 
-  it("standalone mode shim count matches the non-executor apcli subcommand count (4)", () => {
-    // Executor-required entries skip registration in standalone, and the shim
-    // registrar skips any name whose apcli counterpart is absent → 4 shims.
-    const cli = createCli(undefined, "test-cli");
-    const shimNames = getRootShimNames(cli);
-    expect(shimNames.length).toBe(4);
-  });
-
-  it("embedded mode registers ZERO shims at root (only 'apcli' + 'help')", () => {
+  it("embedded mode registers ZERO root-level shim commands (parity with standalone)", () => {
     const cli = createCli({
       registry: makeRegistry(),
       executor: makeFakeExecutor(),
       progName: "branded",
     });
-    const shimNames = getRootShimNames(cli);
-    expect(shimNames).toEqual([]);
-    // But the apcli group itself is still present
+    const rootCmds = getNonGroupRootCommandNames(cli);
+    expect(rootCmds).toEqual([]);
+    // apcli sub-group is still present.
     const apcli = cli.commands.find((c) => c.name() === "apcli");
     expect(apcli).toBeDefined();
   });
 
-  it("shim invocation writes exact deprecation warning to stderr (cli name in warning)", async () => {
-    const cli = createCli(undefined, "my-cli");
+  it("invoking a former-shim name at root no longer prints a deprecation warning", async () => {
+    const cli = createCli(undefined, "my-cli").exitOverride();
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    // Issue 3: standalone + no registry → list action now exits with
-    // CONFIG_INVALID (47) when listModules is invoked. Trap the exit so the
-    // deprecation warning assertion remains meaningful.
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
-      throw new Error("__exit__");
-    }) as never);
 
-    try {
-      await cli.parseAsync(["list"], { from: "user" });
-    } catch (err) {
-      expect((err as Error).message).toBe("__exit__");
-    }
+    // `list` at root is now an unknown command; Commander throws a
+    // CommanderError thanks to exitOverride().
+    await expect(cli.parseAsync(["list"], { from: "user" })).rejects.toThrow();
 
     const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
-    expect(stderrText).toContain(
-      "WARNING: 'list' as a root-level command is deprecated. Use 'my-cli apcli list' instead.",
-    );
-    expect(stderrText).toContain("Will be removed in v0.8");
-    // Sanity: stdout got *something* (list produced output or an empty table)
-    expect(stdoutSpy.mock.calls.length).toBeGreaterThanOrEqual(0);
+    expect(stderrText).not.toContain("Will be removed in v0.8");
+    expect(stderrText).not.toContain("root-level command is deprecated");
 
     stderrSpy.mockRestore();
     stdoutSpy.mockRestore();
-    exitSpy.mockRestore();
-  });
-
-  it("shim invocation forwards to apcli subcommand action (list produces same output)", async () => {
-    const listMods = [
-      { id: "alpha.one", name: "alpha.one", description: "First module" },
-    ];
-    const registryWithData = {
-      listModules: () => listMods,
-      getModule: (id: string) => listMods.find((m) => m.id === id) ?? null,
-    };
-    // We can't pass a registry into createCli() standalone mode — registry
-    // triggers embedded mode and suppresses shims. Instead invoke through the
-    // non-embedded default registry fallback and verify the warning fires
-    // and the list command (empty result) runs cleanly.
-    const cli = createCli(undefined, "x");
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    // Issue 3: standalone + no registry → list action exits with CONFIG_INVALID
-    // when listModules() is called.
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
-      throw new Error("__exit__");
-    }) as never);
-
-    try {
-      await cli.parseAsync(["list"], { from: "user" });
-    } catch (err) {
-      expect((err as Error).message).toBe("__exit__");
-    }
-
-    const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
-    // The shim forwarded to apcli list (deprecation warning fired)...
-    expect(stderrText).toContain("WARNING: 'list' as a root-level command is deprecated.");
-    // ...and the list action reached the unwired-registry error path.
-    expect(stderrText).toContain("no apcore-js registry wired");
-    expect(exitSpy).toHaveBeenCalledWith(47);
-
-    // Keep the registry test at unit level — verify the shim invoked the apcli
-    // 'list' action, which is the forwarding guarantee.
-    void registryWithData;
-    void stdoutSpy;
-
-    stderrSpy.mockRestore();
-    stdoutSpy.mockRestore();
-    exitSpy.mockRestore();
-  });
-
-  it("shim preserves positional args and options when forwarding (describe <id> --format json)", async () => {
-    const cli = createCli(undefined, "z");
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
-      throw new Error("__exit__");
-    }) as never);
-
-    // Issue 3: standalone + no registry → describe action exits with
-    // CONFIG_INVALID (47) when getModule() is called (rather than the old
-    // MODULE_NOT_FOUND 44 which was emitted by a silent empty-registry
-    // fallback). The forwarding contract is still what we verify — the shim
-    // must reach the apcli describe action.
-    try {
-      await cli.parseAsync(["describe", "missing.mod", "--format", "json"], { from: "user" });
-    } catch (err) {
-      // expected: action exited via our process.exit spy
-      expect((err as Error).message).toBe("__exit__");
-    }
-
-    const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
-    // Deprecation warning fired
-    expect(stderrText).toContain(
-      "WARNING: 'describe' as a root-level command is deprecated. Use 'z apcli describe' instead.",
-    );
-    // Forwarded to apcli describe — which hit the unwired-registry error path
-    expect(stderrText).toContain("no apcore-js registry wired");
-    expect(exitSpy).toHaveBeenCalledWith(47);
-
-    stderrSpy.mockRestore();
-    stdoutSpy.mockRestore();
-    exitSpy.mockRestore();
   });
 });
 
@@ -1069,7 +953,7 @@ describe("Review Issue 4: createCli param-combination errors use EXIT_CODES, not
   });
 });
 
-describe("Review Issue 5: extraCommands vs deprecation shim", () => {
+describe("Review Issue 5: extraCommands collision rules (post-v0.8 shim removal)", () => {
   function makeRegistry() {
     return { listModules: () => [], getModule: () => null };
   }
@@ -1080,27 +964,25 @@ describe("Review Issue 5: extraCommands vs deprecation shim", () => {
     };
   }
 
-  it("standalone: extraCommands overriding a deprecation-shim name warns + registers user's command", () => {
+  it("standalone: extraCommands named 'list' (a former-shim name) registers cleanly, no shim collision", () => {
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    // 'list' is one of the deprecation shim names registered in standalone mode.
     const userList = new Command("list").description("user-supplied list command");
     const cli = createCli({
       extraCommands: [userList],
       progName: "t",
     });
 
-    // The user's command should be registered, and there should be exactly one
-    // command named "list" at root (not two — the shim should have been removed).
     const listCmds = cli.commands.filter((c) => c.name() === "list");
     expect(listCmds.length).toBe(1);
     expect(listCmds[0].description()).toBe("user-supplied list command");
 
     const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
-    expect(stderrText).toContain("extraCommands 'list' overrides the deprecation shim");
+    expect(stderrText).not.toContain("overrides the deprecation shim");
+    expect(stderrText).not.toContain("collides");
     stderrSpy.mockRestore();
   });
 
-  it("standalone: extraCommands named 'apcli' still exits 2 (reserved, NOT shim)", () => {
+  it("standalone: extraCommands named 'apcli' exits 2 (reserved group name)", () => {
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("__exit__");
@@ -1114,7 +996,7 @@ describe("Review Issue 5: extraCommands vs deprecation shim", () => {
     exitSpy.mockRestore();
   });
 
-  it("embedded (no shims): extraCommands named 'list' registers cleanly, no warning", () => {
+  it("embedded: extraCommands named 'list' registers cleanly", () => {
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const userList = new Command("list").description("embedded-mode user list");
     const cli = createCli({
