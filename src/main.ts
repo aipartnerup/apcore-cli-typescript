@@ -46,16 +46,26 @@ import { canonicalFormatHelp } from "./canonical-help.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** Whether --verbose was passed (controls help detail level). */
-export let verboseHelp = false;
+/**
+ * Whether --verbose was passed (controls help detail level).
+ *
+ * Module-private mutable flag. The setter `setVerboseHelp` is the sanctioned
+ * public API; raw `let`-binding access from outside this module is an audit
+ * violation (D9-W1) and unstable across bundlers.
+ */
+let verboseHelp = false;
 
 /** Set the verbose help flag. When false, built-in options are hidden from help. */
 export function setVerboseHelp(verbose: boolean): void {
   verboseHelp = verbose;
 }
 
-/** Base URL for online documentation. Null means no docs link shown. */
-export let docsUrl: string | null = null;
+/**
+ * Base URL for online documentation. Null means no docs link shown.
+ *
+ * Module-private. Use the setter `setDocsUrl` from outside this module.
+ */
+let docsUrl: string | null = null;
 
 /**
  * Set the base URL for online documentation links shown in help and man pages.
