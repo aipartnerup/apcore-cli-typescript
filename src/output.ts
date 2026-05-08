@@ -402,6 +402,10 @@ function escapeCsvField(value: string): string {
 
 /**
  * Format and print a PreflightResult to stdout.
+ *
+ * @internal Cross-module helper consumed by main.ts and discovery.ts only.
+ * Not part of the public package surface — `index.ts` does not re-export it.
+ * Audit D1-W4 (2026-05-08).
  */
 export function formatPreflightResult(result: PreflightResult, format?: string): void {
   const resolved = resolveFormat(format);
@@ -460,6 +464,10 @@ export function formatPreflightResult(result: PreflightResult, format?: string):
 
 /**
  * Return the exit code for the first failed check in a PreflightResult.
+ *
+ * @internal Cross-module helper consumed by main.ts and discovery.ts only.
+ * Not part of the public package surface — `index.ts` does not re-export it.
+ * Audit D1-W4 (2026-05-08).
  */
 export function firstFailedExitCode(result: PreflightResult): number {
   // Map preflight-check names (apcore-js PROTOCOL_SPEC) to CLI exit codes.
