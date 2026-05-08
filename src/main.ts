@@ -1186,31 +1186,10 @@ export function buildModuleCommand(
 }
 
 // ---------------------------------------------------------------------------
-// validateModuleId
+// validateModuleId — see src/validate.ts (extracted to mirror Python/Rust layout, audit D8-W2)
 // ---------------------------------------------------------------------------
 
-/**
- * Validate that a module ID conforms to the expected format.
- * Pattern: [a-z][a-z0-9_]*(.[a-z][a-z0-9_])* — max 192 chars.
- *
- * Length limit tracks PROTOCOL_SPEC §2.7 EBNF constraint #1 — bumped from
- * 128 to 192 in spec 1.6.0-draft to accommodate Java/.NET deep-namespace
- * FQN-derived IDs. Filesystem-safe (192 + ".binding.yaml".length = 205 < 255).
- */
-export function validateModuleId(moduleId: string): void {
-  if (moduleId.length > 192) {
-    process.stderr.write(
-      `Error: Invalid module ID format: '${moduleId}'. Maximum length is 192 characters.\n`,
-    );
-    process.exit(EXIT_CODES.INVALID_CLI_INPUT);
-  }
-  if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/.test(moduleId)) {
-    process.stderr.write(
-      `Error: Invalid module ID format: '${moduleId}'.\n`,
-    );
-    process.exit(EXIT_CODES.INVALID_CLI_INPUT);
-  }
-}
+export { validateModuleId } from "./validate.js";
 
 // ---------------------------------------------------------------------------
 // collectInput
