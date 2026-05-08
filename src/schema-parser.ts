@@ -93,12 +93,16 @@ export function schemaToCliOptions(
   for (const [propName, propSchema] of Object.entries(properties)) {
     const flagName = "--" + propName.replace(/_/g, "-");
 
-    // Reserved name check (must precede collision check to match Python/Rust)
+    // Reserved name check (must precede collision check to match Python/Rust).
+    // Exit 48 (SCHEMA_CIRCULAR_REF — the protocol-spec slot for schema-validity
+    // errors) for cross-SDK parity with Python sys.exit(48) and Rust
+    // SchemaParserError::ReservedPropertyName → CliError::SchemaParserFailure.
+    // Audit D11-NEW-005 (2026-05-08).
     if (RESERVED_NAMES.has(propName)) {
       process.stderr.write(
         `Error: Module schema property '${propName}' conflicts with a reserved CLI option name. Rename the property.\n`,
       );
-      process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+      process.exit(EXIT_CODES.SCHEMA_CIRCULAR_REF);
     }
 
     // Collision detection — exit 48 per spec (docs/features/schema-parser.md

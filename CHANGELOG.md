@@ -5,9 +5,23 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] - 2026-05-07
+## [0.8.0] - 2026-05-08
+
+### Added
+
+- **`builtinGroupName?: string` option on `createCli`** — downstream branded CLIs that embed apcore-cli can now expose the built-in commands under a custom namespace (e.g. `mycorp-cli admin health` instead of `mycorp-cli apcli health`). `ApcliGroup` gains a `name` getter and the constructor option is threaded through `fromCliConfig` / `fromYaml` / `tryFromYaml` / `_build`. Default `"apcli"` is unchanged. Validated against `/^[a-z][a-z0-9_-]*$/`; invalid values exit 2. Two new module-level accessors `getReservedGroupNames()` / `setReservedGroupNames()` expose the live reserved-set so `cli.ts`'s `assertNotReserved` and `listCommands` honour the renamed group. Env var `APCORE_CLI_APCLI` and config keys `apcli.*` deliberately do NOT rename — they are apcore-cli-internal toggles, not user-facing. Cross-SDK parity with Python `create_cli(builtin_group_name=...)`. New `DEFAULT_BUILTIN_GROUP_NAME` constant exported from `./builtin-group.js`.
+- **Client-side approval gate for `apcli enable / disable / reload / config set`** — new `requireApprovalForSystemCommand(moduleId, autoApprove)` helper in `src/system-cmd.ts` synthesises a minimal `ModuleDescriptor` with `annotations.requires_approval = true` and invokes `checkApproval(...)` before dispatching the executor call. `ApprovalDeniedError` / `ApprovalTimeoutError` propagate to `emitErrorAndExit` which maps them to exit 46 via `exitCodeForError`. `apcli config set` gains a `-y, --yes` flag for parity with the other three. Mirrors Python `_check_system_approval` and Rust `require_approval_for_system_command`. Audit D11-B-001 (see Fixed).
+- **14 new tests in `tests/builtin-group.test.ts`** — `ApcliGroup builtin-group rename` describe block covers default name, custom name via both factories, validation of 6 invalid + 5 valid name shapes.
+- **5 new tests in `tests/system-cmd.test.ts`** — `client-side approval gate (D11-B-001)` describe block covers `enable / disable / reload / config set` deny path on non-TTY without `--yes` (exit 46 + executor never called) and the `--yes` bypass.
+
+### Fixed
+
+- **D11-B-001 — `system-cmd.ts` skipped the client-side approval gate entirely**. Each of the four mutating subcommands (`enable`, `disable`, `reload`, `config set`) declared `--yes` but never read it; no `checkApproval(...)` call existed in the file. Operators on Python or Rust SDKs got an interactive 60s confirmation prompt; TS users got nothing — server-side enforcement was the only gate, and the `--yes` flag was completely dead. Fix wires `requireApprovalForSystemCommand(moduleId, opts.yes)` into all four action handlers (see Added). Description text updated from "Signal explicit intent (forwarded to server-side approval gate)" to "Skip approval prompt" — the original copy was misleading because nothing was actually forwarded.
+- **D11-NEW-005 — TS RESERVED_NAMES exit code was 2, not 48**. `schema-parser.ts:101` previously called `process.exit(EXIT_CODES.INVALID_CLI_INPUT)` (=2) when a schema property collided with a reserved CLI option name. Spec mandates exit 48 (cross-SDK parity with Python `sys.exit(48)` and Rust `CliError::SchemaParserFailure → EXIT_SCHEMA_CIRCULAR_REF`). Fix changes to `EXIT_CODES.SCHEMA_CIRCULAR_REF`. The neighbour flag-collision branch already exited 48; both schema-author errors are now consistent. 6 existing tests updated from "exits 2" assertions to "exits 48".
 
 ### Changed
+
+- **`vitest.config.ts` `coverage.thresholds`** added — `lines / functions / statements: 85`, `branches: 75`. Cross-SDK CI parity with Python `pyproject.toml [tool.coverage.report] fail_under = 85` and Rust `make coverage --fail-under-lines 85`. Audit D5-004.
 
 - **`apcli list` and `apcli describe` `--format` choices** are now validated
   via Commander's `Option.choices(...)` against the canonical set

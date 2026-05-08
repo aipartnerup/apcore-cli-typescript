@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   ApcliGroup,
   APCLI_SUBCOMMAND_NAMES,
+  DEFAULT_BUILTIN_GROUP_NAME,
   RESERVED_GROUP_NAMES,
   type ApcliConfig,
 } from "../src/builtin-group.js";
@@ -662,6 +663,61 @@ describe("ApcliGroup.fromYaml — lenient on unexpected shape (A-D-006)", () => 
     expect(g.resolveVisibility()).toBe("none");
     exitSpy.mockRestore();
   });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-05-08 cross-SDK parity: ApcliGroup `name` option / createCli
+// `builtinGroupName` lets downstream branded CLIs rename the built-in
+// command group from `apcli` to a custom namespace.
+// ---------------------------------------------------------------------------
+
+describe("ApcliGroup builtin-group rename", () => {
+  it("default name is 'apcli'", () => {
+    const g = ApcliGroup.fromCliConfig(undefined, { registryInjected: false });
+    expect(g.name).toBe("apcli");
+    expect(DEFAULT_BUILTIN_GROUP_NAME).toBe("apcli");
+  });
+
+  it("custom name via fromCliConfig", () => {
+    const g = ApcliGroup.fromCliConfig(
+      { mode: "all" },
+      { registryInjected: false, name: "admin" },
+    );
+    expect(g.name).toBe("admin");
+    expect(g.resolveVisibility()).toBe("all");
+  });
+
+  it("custom name via fromYaml", () => {
+    const g = ApcliGroup.fromYaml(
+      { mode: "none" },
+      { registryInjected: false, name: "builtin" },
+    );
+    expect(g.name).toBe("builtin");
+  });
+
+  it.each([
+    "",
+    "Apcli",
+    "apcli/x",
+    "1apcli",
+    " apcli ",
+    "with space",
+  ])("invalid name %j throws", (bad) => {
+    expect(() =>
+      ApcliGroup.fromCliConfig(undefined, { registryInjected: false, name: bad }),
+    ).toThrow(/builtinGroupName/);
+  });
+
+  it.each(["apcli", "admin", "built-in", "x", "a1-b_c"])(
+    "valid name %j accepted",
+    (good) => {
+      const g = ApcliGroup.fromCliConfig(undefined, {
+        registryInjected: false,
+        name: good,
+      });
+      expect(g.name).toBe(good);
+    },
+  );
 });
 
 describe("ApcliGroup mode error messages (Issue 8)", () => {

@@ -7,7 +7,8 @@
  */
 
 import { Command } from "commander";
-import type { Executor } from "./cli.js";
+import { checkApproval } from "./approval.js";
+import type { Executor, ModuleDescriptor } from "./cli.js";
 import { exitCodeForError } from "./errors.js";
 import { formatExecResult, resolveFormat } from "./output.js";
 
@@ -55,6 +56,35 @@ function emitResult(
 function emitErrorAndExit(e: unknown): never {
   process.stderr.write(`Error: ${e instanceof Error ? e.message : e}\n`);
   process.exit(exitCodeForError(e));
+}
+
+/**
+ * Run the client-side approval gate for a mutating system command.
+ *
+ * Mirrors Python ``_check_system_approval`` (system_cmd.py:36) and Rust
+ * ``require_approval_for_system_command`` (system_cmd.rs:294). Audit
+ * D11-B-001 (2026-05-08): the prior version of this file exposed `--yes`
+ * but never called ``checkApproval``, leaving the operator-confirmation
+ * contract (FR-SYSCMD-013) entirely dependent on server-side enforcement.
+ *
+ * Synthesises a minimal ``ModuleDescriptor`` with
+ * ``annotations.requires_approval = true`` so ``checkApproval`` runs the
+ * same TTY-prompt / non-TTY-deny / env-var-bypass logic used by the main
+ * exec dispatcher. ``ApprovalDeniedError`` / ``ApprovalTimeoutError``
+ * propagate to ``emitErrorAndExit`` which maps them to exit 46 via
+ * ``exitCodeForError``.
+ */
+async function requireApprovalForSystemCommand(
+  moduleId: string,
+  autoApprove: boolean,
+): Promise<void> {
+  const syntheticModuleDef: ModuleDescriptor = {
+    id: moduleId,
+    name: moduleId,
+    description: `system command: ${moduleId}`,
+    annotations: { requires_approval: true },
+  };
+  await checkApproval(syntheticModuleDef, autoApprove, undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -229,11 +259,12 @@ export function registerEnableCommand(apcliGroup: Command, executor: Executor): 
     .description("Enable a disabled module at runtime.")
     .argument("<module-id>", "Module ID to enable")
     .requiredOption("--reason <reason>", "Reason for enabling (required for audit).")
-    .option("-y, --yes", "Signal explicit intent (forwarded to server-side approval gate).", false)
+    .option("-y, --yes", "Skip approval prompt (audit D11-B-001 cross-SDK parity).", false)
     .option("--format <format>", "Output format.")
     .action(async (moduleId: string, opts: { reason: string; yes: boolean; format?: string }) => {
       const fmt = resolveFormat(opts.format);
       try {
+        await requireApprovalForSystemCommand("system.control.toggle_feature", opts.yes);
         const result = await callSystemModule(executor, "system.control.toggle_feature", {
           module_id: moduleId,
           enabled: true,
@@ -257,11 +288,12 @@ export function registerDisableCommand(apcliGroup: Command, executor: Executor):
     .description("Disable a module at runtime (calls are rejected until re-enabled).")
     .argument("<module-id>", "Module ID to disable")
     .requiredOption("--reason <reason>", "Reason for disabling (required for audit).")
-    .option("-y, --yes", "Signal explicit intent (forwarded to server-side approval gate).", false)
+    .option("-y, --yes", "Skip approval prompt (audit D11-B-001 cross-SDK parity).", false)
     .option("--format <format>", "Output format.")
     .action(async (moduleId: string, opts: { reason: string; yes: boolean; format?: string }) => {
       const fmt = resolveFormat(opts.format);
       try {
+        await requireApprovalForSystemCommand("system.control.toggle_feature", opts.yes);
         const result = await callSystemModule(executor, "system.control.toggle_feature", {
           module_id: moduleId,
           enabled: false,
@@ -285,11 +317,12 @@ export function registerReloadCommand(apcliGroup: Command, executor: Executor): 
     .description("Hot-reload a module from disk.")
     .argument("<module-id>", "Module ID to reload")
     .requiredOption("--reason <reason>", "Reason for reload (required for audit).")
-    .option("-y, --yes", "Signal explicit intent (forwarded to server-side approval gate).", false)
+    .option("-y, --yes", "Skip approval prompt (audit D11-B-001 cross-SDK parity).", false)
     .option("--format <format>", "Output format.")
     .action(async (moduleId: string, opts: { reason: string; yes: boolean; format?: string }) => {
       const fmt = resolveFormat(opts.format);
       try {
+        await requireApprovalForSystemCommand("system.control.reload_module", opts.yes);
         const result = await callSystemModule(executor, "system.control.reload_module", {
           module_id: moduleId,
           reason: opts.reason,
@@ -341,12 +374,13 @@ export function registerConfigCommand(apcliGroup: Command, executor: Executor): 
   configGroup.addCommand(configGetCmd);
 
   const configSetCmd = new Command("set")
-    .description("Update a runtime configuration value (audit-logged; server-side approval gate applies).")
+    .description("Update a runtime configuration value (audit-logged; client-side approval gate applies).")
     .argument("<key>", "Configuration key (dot-path)")
     .argument("<value>", "New value")
     .requiredOption("--reason <reason>", "Reason for config change (required for audit).")
+    .option("-y, --yes", "Skip approval prompt (audit D11-B-001 cross-SDK parity).", false)
     .option("--format <format>", "Output format.")
-    .action(async (key: string, value: string, opts: { reason: string; format?: string }) => {
+    .action(async (key: string, value: string, opts: { reason: string; yes: boolean; format?: string }) => {
       const fmt = resolveFormat(opts.format);
       // Attempt to parse value as JSON for typed values
       let parsedValue: unknown;
@@ -357,6 +391,7 @@ export function registerConfigCommand(apcliGroup: Command, executor: Executor): 
       }
 
       try {
+        await requireApprovalForSystemCommand("system.control.update_config", opts.yes);
         const result = await callSystemModule(executor, "system.control.update_config", {
           key,
           value: parsedValue,

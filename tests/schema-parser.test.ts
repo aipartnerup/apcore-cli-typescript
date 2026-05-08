@@ -220,7 +220,7 @@ describe("schemaToCliOptions()", () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it("exits 2 on reserved name collision", () => {
+  it("exits 48 on reserved name collision", () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("exit");
     });
@@ -231,10 +231,12 @@ describe("schemaToCliOptions()", () => {
         properties: { input: { type: "string" } },
       }),
     ).toThrow("exit");
-    expect(exitSpy).toHaveBeenCalledWith(2);
+    // Audit D11-NEW-005 (2026-05-08): exit 48 (SCHEMA_CIRCULAR_REF) for cross-SDK
+    // parity with Python sys.exit(48) and Rust CliError::SchemaParserFailure.
+    expect(exitSpy).toHaveBeenCalledWith(48);
   });
 
-  it("exits 2 for 'format' reserved name", () => {
+  it("exits 48 for 'format' reserved name", () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("exit");
     });
@@ -245,10 +247,10 @@ describe("schemaToCliOptions()", () => {
         properties: { format: { type: "string" } },
       }),
     ).toThrow("exit");
-    expect(exitSpy).toHaveBeenCalledWith(2);
+    expect(exitSpy).toHaveBeenCalledWith(48);
   });
 
-  it("exits 2 for 'dry_run' reserved name (snake_case F1 preflight flag)", () => {
+  it("exits 48 for 'dry_run' reserved name (snake_case F1 preflight flag)", () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("exit");
     });
@@ -259,13 +261,13 @@ describe("schemaToCliOptions()", () => {
         properties: { dry_run: { type: "boolean" } },
       }),
     ).toThrow("exit");
-    expect(exitSpy).toHaveBeenCalledWith(2);
+    expect(exitSpy).toHaveBeenCalledWith(48);
   });
 
   it.each([
     "fields", "verbose", "trace", "stream", "strategy",
     "approval_timeout", "approval_token", "large_input",
-  ])("exits 2 for '%s' reserved name", (propName) => {
+  ])("exits 48 for '%s' reserved name", (propName) => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("exit");
     });
@@ -276,7 +278,7 @@ describe("schemaToCliOptions()", () => {
         properties: { [propName]: { type: "string" } },
       }),
     ).toThrow("exit");
-    expect(exitSpy).toHaveBeenCalledWith(2);
+    expect(exitSpy).toHaveBeenCalledWith(48);
   });
 
   // D11-004: reserved-name check must precede collision check
@@ -300,7 +302,7 @@ describe("schemaToCliOptions()", () => {
         },
       }),
     ).toThrow("exit");
-    expect(exitSpy).toHaveBeenCalledWith(2);
+    expect(exitSpy).toHaveBeenCalledWith(48);
 
     const messages = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
     expect(messages).toContain("reserved");

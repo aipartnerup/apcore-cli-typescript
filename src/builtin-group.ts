@@ -41,8 +41,69 @@ export type ApcliConfig =
       disableEnv?: boolean;
     };
 
-/** Set of group names reserved by apcore-cli (checked in cli.ts). */
-export const RESERVED_GROUP_NAMES: ReadonlySet<string> = new Set(["apcli"]);
+/**
+ * Default name of the built-in command group. Overridable per ApcliGroup
+ * instance via the `name` constructor option, or via createCli's
+ * `builtinGroupName` option. Cross-SDK parity with Python
+ * `DEFAULT_BUILTIN_GROUP_NAME` (2026-05-08).
+ */
+export const DEFAULT_BUILTIN_GROUP_NAME = "apcli";
+
+/**
+ * Set of group names reserved by apcore-cli when no rename is configured.
+ * Default mirrors {@link DEFAULT_BUILTIN_GROUP_NAME}; when `builtinGroupName`
+ * is overridden the live reserved set is `new Set([apcliGroup.name])` and
+ * is applied per-instance during the cli.ts collision check.
+ */
+export const RESERVED_GROUP_NAMES: ReadonlySet<string> = new Set([DEFAULT_BUILTIN_GROUP_NAME]);
+
+/**
+ * Module-level mutable cache of the current effective reserved-group set,
+ * set by {@link setReservedGroupNames} from createCli once the renamed
+ * builtin-group name is resolved. Defaults to {@link RESERVED_GROUP_NAMES}.
+ *
+ * Cross-SDK parity (2026-05-08): mirrors the per-instance
+ * `_reserved_group_names` field on Python `GroupedModuleGroup`. The
+ * TypeScript port keeps the data at module scope because the collision
+ * check (`assertNotReserved` in cli.ts) is a free function rather than a
+ * method on the LazyModuleGroup, and threading state through every
+ * call-site would be more invasive than the rename feature itself.
+ */
+let _effectiveReservedNames: ReadonlySet<string> = RESERVED_GROUP_NAMES;
+
+/**
+ * Returns the effective reserved-group set. Defaults to {@link RESERVED_GROUP_NAMES};
+ * after {@link setReservedGroupNames} runs (called by createCli when a custom
+ * `builtinGroupName` is in effect), returns `new Set([apcliCfg.name])`.
+ */
+export function getReservedGroupNames(): ReadonlySet<string> {
+  return _effectiveReservedNames;
+}
+
+/**
+ * Replace the effective reserved-group set with `names`. Called by createCli
+ * after the ApcliGroup is built so the cli.ts collision check sees the
+ * renamed group's name. Pass {@link RESERVED_GROUP_NAMES} (or
+ * `new Set([DEFAULT_BUILTIN_GROUP_NAME])`) to reset.
+ */
+export function setReservedGroupNames(names: ReadonlySet<string>): void {
+  _effectiveReservedNames = names;
+}
+
+/**
+ * Validate a candidate built-in-group name. Mirrors the regex used for
+ * business-module group names downstream so a renamed built-in cannot be
+ * silently shadowed by a regex-matching business module.
+ */
+const _NAME_REGEX = /^[a-z][a-z0-9_-]*$/;
+function _validateBuiltinGroupName(name: string): void {
+  if (!name || !_NAME_REGEX.test(name)) {
+    throw new Error(
+      `builtinGroupName ${JSON.stringify(name)} must match /^[a-z][a-z0-9_-]*$/ ` +
+        "(non-empty, lowercase, alphanumeric + '_' / '-', leading letter).",
+    );
+  }
+}
 
 const VALID_USER_MODES: ReadonlySet<string> = new Set([
   "all",
@@ -87,6 +148,7 @@ interface ApcliGroupInit {
   disableEnv: boolean;
   registryInjected: boolean;
   fromCliConfig: boolean;
+  name: string;
 }
 
 /**
@@ -103,6 +165,7 @@ export class ApcliGroup {
   private readonly _disableEnv: boolean;
   private readonly _registryInjected: boolean;
   private readonly _fromCliConfig: boolean;
+  private readonly _name: string;
 
   private constructor(init: ApcliGroupInit) {
     this._mode = init.mode;
@@ -111,6 +174,17 @@ export class ApcliGroup {
     this._disableEnv = init.disableEnv;
     this._registryInjected = init.registryInjected;
     this._fromCliConfig = init.fromCliConfig;
+    this._name = init.name;
+  }
+
+  /**
+   * Resolved name for the built-in command group (default `"apcli"`).
+   * Overridable via createCli's `builtinGroupName` option for downstream
+   * branded CLIs that want a custom namespace. Cross-SDK parity with
+   * Python `ApcliGroup.name` (2026-05-08).
+   */
+  get name(): string {
+    return this._name;
   }
 
   /**
@@ -120,7 +194,7 @@ export class ApcliGroup {
    */
   static fromCliConfig(
     config: ApcliConfig | undefined,
-    opts: { registryInjected: boolean },
+    opts: { registryInjected: boolean; name?: string },
   ): ApcliGroup {
     return ApcliGroup._build(config, opts, /*fromCliConfig*/ true);
   }
@@ -132,7 +206,7 @@ export class ApcliGroup {
    */
   static fromYaml(
     config: unknown,
-    opts: { registryInjected: boolean },
+    opts: { registryInjected: boolean; name?: string },
   ): ApcliGroup {
     // Lenient shape handling per features/builtin-group.md §4.2:
     // "On unexpected `config` type: returns ApcliGroup(mode='auto') after
@@ -164,7 +238,7 @@ export class ApcliGroup {
    */
   static tryFromYaml(
     config: unknown,
-    opts: { registryInjected: boolean },
+    opts: { registryInjected: boolean; name?: string },
   ): [ApcliGroup, null] | [null, string] {
     // Shape rejection. Note: `typeof [] === 'object'`, so arrays must be
     // excluded explicitly — otherwise they fall through to fromYaml() which
@@ -199,9 +273,14 @@ export class ApcliGroup {
 
   private static _build(
     config: ApcliConfig | undefined,
-    opts: { registryInjected: boolean },
+    opts: { registryInjected: boolean; name?: string },
     fromCliConfig: boolean,
   ): ApcliGroup {
+    // Resolve the built-in-group name. Validation runs once here so all
+    // construction paths share the same shell-safe regex check.
+    const name = opts.name ?? DEFAULT_BUILTIN_GROUP_NAME;
+    _validateBuiltinGroupName(name);
+
     // Boolean shorthand → normalized object form.
     if (config === true) {
       return new ApcliGroup({
@@ -211,6 +290,7 @@ export class ApcliGroup {
         disableEnv: false,
         registryInjected: opts.registryInjected,
         fromCliConfig,
+        name,
       });
     }
     if (config === false) {
@@ -221,6 +301,7 @@ export class ApcliGroup {
         disableEnv: false,
         registryInjected: opts.registryInjected,
         fromCliConfig,
+        name,
       });
     }
 
@@ -233,6 +314,7 @@ export class ApcliGroup {
         disableEnv: false,
         registryInjected: opts.registryInjected,
         fromCliConfig,
+        name,
       });
     }
 
@@ -296,6 +378,7 @@ export class ApcliGroup {
       disableEnv,
       registryInjected: opts.registryInjected,
       fromCliConfig,
+      name,
     });
   }
 

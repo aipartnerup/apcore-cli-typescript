@@ -37,7 +37,7 @@ import {
   registerUsageCommand,
 } from "./system-cmd.js";
 import { registerPipelineCommand } from "./strategy.js";
-import { ApcliGroup, RESERVED_GROUP_NAMES } from "./builtin-group.js";
+import { ApcliGroup, setReservedGroupNames } from "./builtin-group.js";
 import type { ApcliConfig } from "./builtin-group.js";
 import { ExposureFilter } from "./exposure.js";
 import { AuditLogger, setAuditLogger } from "./security/audit.js";
@@ -266,6 +266,19 @@ export interface CreateCliOptions {
    */
   apcli?: ApcliConfig | ApcliGroup;
   /**
+   * Override the name of the built-in command group (default `"apcli"`).
+   * Downstream branded CLIs that want their built-ins under a custom
+   * namespace (e.g. `mycorp-cli admin health`) pass a different value
+   * here. Must match `/^[a-z][a-z0-9_-]*$/` — non-empty, lowercase,
+   * alphanumeric + `_` / `-`. Invalid values cause exit code 2.
+   *
+   * Note: env var `APCORE_CLI_APCLI` and config keys `apcli.*` remain
+   * stable regardless of this rename — they are apcore-cli-internal
+   * toggles, not user-facing. Mirrors Python
+   * `create_cli(builtin_group_name=)`. Cross-SDK parity: 2026-05-08.
+   */
+  builtinGroupName?: string;
+  /**
    * Host application version printed by `-V, --version`.
    *
    * When omitted, the `--version` flag is NOT registered — embedded CLIs
@@ -305,6 +318,7 @@ export function createCli(
   let appVersion: string | undefined;
   let appDescription: string | undefined;
   let allowedPrefixes: string[] | undefined;
+  let builtinGroupName: string | undefined;
   if (typeof extensionsDirOrOpts === "object" && extensionsDirOrOpts !== null) {
     extensionsDir = extensionsDirOrOpts.extensionsDir;
     progName = extensionsDirOrOpts.progName ?? progName;
@@ -317,6 +331,7 @@ export function createCli(
     apcliOption = extensionsDirOrOpts.apcli;
     appVersion = extensionsDirOrOpts.version;
     appDescription = extensionsDirOrOpts.description;
+    builtinGroupName = extensionsDirOrOpts.builtinGroupName;
     allowedPrefixes = extensionsDirOrOpts.allowedPrefixes;
   } else {
     extensionsDir = extensionsDirOrOpts;
@@ -402,26 +417,56 @@ export function createCli(
   //   2) CliConfig boolean/object (Tier 1, fromCliConfig)
   //   3) Tier 3 yaml via ConfigResolver.resolveObject (fromYaml)
   let apcliCfg: ApcliGroup;
-  if (apcliOption instanceof ApcliGroup) {
-    apcliCfg = apcliOption;
-  } else if (apcliOption !== undefined) {
-    apcliCfg = ApcliGroup.fromCliConfig(apcliOption, { registryInjected });
-  } else {
-    let yamlVal: unknown = null;
-    try {
-      const resolver = new ConfigResolver();
-      yamlVal = resolver.resolveObject("apcli");
-    } catch {
-      yamlVal = null;
+  try {
+    if (apcliOption instanceof ApcliGroup) {
+      // Pre-built ApcliGroup wins; surface a conflict if the caller also
+      // passed builtinGroupName with a different value.
+      if (
+        builtinGroupName !== undefined
+        && builtinGroupName !== "apcli"
+        && apcliOption.name !== builtinGroupName
+      ) {
+        throw new Error(
+          `builtinGroupName=${JSON.stringify(builtinGroupName)} conflicts with `
+            + `the name on the supplied ApcliGroup (${JSON.stringify(apcliOption.name)}). Pass only one.`,
+        );
+      }
+      apcliCfg = apcliOption;
+    } else if (apcliOption !== undefined) {
+      apcliCfg = ApcliGroup.fromCliConfig(apcliOption, {
+        registryInjected,
+        name: builtinGroupName,
+      });
+    } else {
+      let yamlVal: unknown = null;
+      try {
+        const resolver = new ConfigResolver();
+        yamlVal = resolver.resolveObject("apcli");
+      } catch {
+        yamlVal = null;
+      }
+      apcliCfg = ApcliGroup.fromYaml(yamlVal, {
+        registryInjected,
+        name: builtinGroupName,
+      });
     }
-    apcliCfg = ApcliGroup.fromYaml(yamlVal, { registryInjected });
+  } catch (e) {
+    // ApcliGroup name validation failure or conflict — exit 2.
+    process.stderr.write(`Error: ${e instanceof Error ? e.message : String(e)}\n`);
+    process.exit(EXIT_CODES.INVALID_CLI_INPUT);
   }
 
+  // Sync the module-level reserved-group cache so cli.ts's `assertNotReserved`
+  // and `listCommands` filter against the live (possibly renamed) name. Reset
+  // to the default afterwards is the createCli caller's responsibility — in
+  // practice processes invoke createCli once at startup, so this is fine.
+  setReservedGroupNames(new Set([apcliCfg.name]));
+
   // Construct the apcli sub-group. Hidden when visibility resolves to "none".
-  // Use Commander v12's public CommandOptions.hidden rather than reaching into
-  // the private _hidden field — this survives minor Commander bumps.
+  // Group name resolves from `apcliCfg.name` so downstream branded CLIs
+  // that overrode `builtinGroupName` see their custom namespace.
   const apcliGroup = program
-    .command("apcli", { hidden: !apcliCfg.isGroupVisible() })
+    .command(apcliCfg.name, { hidden: !apcliCfg.isGroupVisible() })
     .description("Built-in commands");
 
   // Dispatch the 13-entry subcommand registrar table (FE-13 §4.9).
@@ -482,9 +527,14 @@ export function createCli(
   // reads the actual program shape. Reserved-name (`apcli`) and
   // live-collision cases are hard exit 2 (FE-13 §4.10 / §7 FR-13-09).
   if (extraCommands && extraCommands.length > 0) {
+    // Reserved-name set follows the resolved built-in-group name, not the
+    // static default. When a downstream branded CLI renames the group via
+    // `builtinGroupName`, an extraCommands entry that shadows the renamed
+    // group is the same kind of collision and is rejected here.
+    const _reservedForExtra: ReadonlySet<string> = new Set([apcliCfg.name]);
     for (const cmd of extraCommands) {
       const cmdName = cmd.name();
-      if (RESERVED_GROUP_NAMES.has(cmdName)) {
+      if (_reservedForExtra.has(cmdName)) {
         process.stderr.write(
           `Error: extraCommands name '${cmdName}' is reserved\n`,
         );

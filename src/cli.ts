@@ -12,7 +12,7 @@ import { buildModuleCommand } from "./main.js";
 import { getDisplay } from "./display-helpers.js";
 import { ExposureFilter } from "./exposure.js";
 import { warn } from "./logger.js";
-import { RESERVED_GROUP_NAMES } from "./builtin-group.js";
+import { getReservedGroupNames } from "./builtin-group.js";
 import { EXIT_CODES } from "./errors.js";
 
 // TODO: Import Registry and Executor from apcore-js once available
@@ -128,7 +128,7 @@ function assertNotReserved(
   name: string,
   moduleId: string,
 ): void {
-  if (!RESERVED_GROUP_NAMES.has(name)) return;
+  if (!getReservedGroupNames().has(name)) return;
   let msg: string;
   if (kind === "group") {
     msg =
@@ -463,8 +463,9 @@ export class GroupedModuleGroup extends LazyModuleGroup {
    */
   override listCommands(): string[] {
     this.buildGroupMap();
+    const reserved = getReservedGroupNames();
     const groupNames = [...this.groupMap.keys()].filter(
-      (g) => !RESERVED_GROUP_NAMES.has(g),
+      (g) => !reserved.has(g),
     );
     const topNames = [...this.topLevelModules.keys()];
     return [...new Set([...groupNames, ...topNames])].sort();

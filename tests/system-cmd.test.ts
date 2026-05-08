@@ -270,8 +270,12 @@ describe("per-subcommand behavioral parity", () => {
     });
     const apcliGroup = new Command("apcli").exitOverride();
     registerConfigCommand(apcliGroup, executor);
+    // Audit D11-B-001 (2026-05-08): client-side approval gate now wired
+    // for `config set` (cross-SDK parity with Python+Rust). Pass --yes to
+    // bypass the prompt; without it a non-TTY invocation throws
+    // ApprovalDeniedError and exits 46.
     await apcliGroup.parseAsync(
-      ["config", "set", "foo.bar", "99", "--reason", "tuning", "--format", "json"],
+      ["config", "set", "foo.bar", "99", "--reason", "tuning", "--yes", "--format", "json"],
       { from: "user" },
     );
     const call = state.calls.find((c) => c.moduleId === "system.control.update_config");
@@ -381,5 +385,101 @@ describe("emitErrorAndExit: exit-code fidelity via exitCodeForError", () => {
     ).rejects.toThrow("__EXIT__");
     expect(exitSpy).toHaveBeenCalledWith(1);
     exitSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit D11-B-001 (2026-05-08): client-side approval gate parity with
+// Python `_check_system_approval` and Rust `require_approval_for_system_command`.
+// Each mutating subcommand must invoke `checkApproval` before calling the
+// executor; without `--yes` AND with non-TTY stdin, the subcommand exits 46
+// (APPROVAL_DENIED). The `--yes` flag bypasses the gate.
+// ---------------------------------------------------------------------------
+
+describe("client-side approval gate (D11-B-001)", () => {
+  const origStdinTTY = process.stdin.isTTY;
+  beforeEach(() => {
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+  });
+  afterEach(() => {
+    Object.defineProperty(process.stdin, "isTTY", { value: origStdinTTY, configurable: true });
+  });
+
+  it("enable without --yes on non-TTY exits 46 and never calls executor", async () => {
+    const { registerEnableCommand } = await import("../src/system-cmd.js");
+    const { executor, state } = makeExecutor({});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((_code?: number) => {
+      throw new Error("__EXIT__");
+    }) as never);
+    const apcliGroup = new Command("apcli").exitOverride();
+    registerEnableCommand(apcliGroup, executor);
+    await expect(
+      apcliGroup.parseAsync(["enable", "mymod", "--reason", "test"], { from: "user" }),
+    ).rejects.toThrow("__EXIT__");
+    expect(exitSpy).toHaveBeenCalledWith(46);
+    expect(state.calls).toHaveLength(0);
+    exitSpy.mockRestore();
+  });
+
+  it("disable without --yes on non-TTY exits 46", async () => {
+    const { registerDisableCommand } = await import("../src/system-cmd.js");
+    const { executor } = makeExecutor({});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((_code?: number) => {
+      throw new Error("__EXIT__");
+    }) as never);
+    const apcliGroup = new Command("apcli").exitOverride();
+    registerDisableCommand(apcliGroup, executor);
+    await expect(
+      apcliGroup.parseAsync(["disable", "mymod", "--reason", "test"], { from: "user" }),
+    ).rejects.toThrow("__EXIT__");
+    expect(exitSpy).toHaveBeenCalledWith(46);
+    exitSpy.mockRestore();
+  });
+
+  it("reload without --yes on non-TTY exits 46", async () => {
+    const { registerReloadCommand } = await import("../src/system-cmd.js");
+    const { executor } = makeExecutor({});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((_code?: number) => {
+      throw new Error("__EXIT__");
+    }) as never);
+    const apcliGroup = new Command("apcli").exitOverride();
+    registerReloadCommand(apcliGroup, executor);
+    await expect(
+      apcliGroup.parseAsync(["reload", "mymod", "--reason", "test"], { from: "user" }),
+    ).rejects.toThrow("__EXIT__");
+    expect(exitSpy).toHaveBeenCalledWith(46);
+    exitSpy.mockRestore();
+  });
+
+  it("config set without --yes on non-TTY exits 46", async () => {
+    const { registerConfigCommand } = await import("../src/system-cmd.js");
+    const { executor } = makeExecutor({});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((_code?: number) => {
+      throw new Error("__EXIT__");
+    }) as never);
+    const apcliGroup = new Command("apcli").exitOverride();
+    registerConfigCommand(apcliGroup, executor);
+    await expect(
+      apcliGroup.parseAsync(
+        ["config", "set", "k", "v", "--reason", "tuning"],
+        { from: "user" },
+      ),
+    ).rejects.toThrow("__EXIT__");
+    expect(exitSpy).toHaveBeenCalledWith(46);
+    exitSpy.mockRestore();
+  });
+
+  it("enable with --yes bypasses the gate even on non-TTY", async () => {
+    const { registerEnableCommand } = await import("../src/system-cmd.js");
+    const { executor, state } = makeExecutor({
+      responses: { "system.control.toggle_feature": { ok: true } },
+    });
+    const apcliGroup = new Command("apcli").exitOverride();
+    registerEnableCommand(apcliGroup, executor);
+    await apcliGroup.parseAsync(
+      ["enable", "mymod", "--reason", "test", "--yes", "--format", "json"],
+      { from: "user" },
+    );
+    expect(state.calls.find((c) => c.moduleId === "system.control.toggle_feature")).toBeDefined();
   });
 });
