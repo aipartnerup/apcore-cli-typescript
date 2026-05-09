@@ -5,6 +5,29 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-05-09
+
+### Fixed
+
+- **Init-time deadlock under Bun (`src/security/sandbox.ts`).** The
+  sandbox runner's 5 `await import('node:child_process|os|path|fs')`
+  calls were hoisted to static `import` statements at the top of
+  `sandbox.ts`. The dynamic-import pattern was a holdover from when
+  apcore-cli targeted both Node and browser; the CLI is Node-only by
+  nature (`#!/usr/bin/env node`, `process.argv[1]` re-exec, child-
+  process spawning), so deferring the imports added no value and
+  contributed to the Bun deadlock chain when the CLI was loaded via
+  `bun run dist/bin/apcore-cli.js`. Verified end-to-end on Bun 1.3.13:
+  `--version` returns in 108 ms (was: indefinite hang on Bun 1.2.x).
+  No public API change.
+- **C-SNAKE/1 — schema kwargs forwarded under commander's camelCase keys instead of the schema's snake_case property names** (`src/main.ts:985-998`). Commander stores parsed flag values under camelCased attribute names (`--has-solution` → `options.hasSolution`); the action handler previously passed `Object.entries(options)` straight into `schemaKwargs`, so modules reading `input["has_solution"]` always saw `undefined`. Single-word flags (`--module`, `--page`) coincidentally worked because their camelCase form matches the schema name. Multi-word fields (`has_solution`, `sort_by`, `sort_order`) were silently dropped. The fix iterates `schemaOptions` and writes each value back under its original `propName`, matching Python click's auto-derived parameter name and Rust clap's explicit `Arg::new(prop_name)` semantics. Cross-SDK parity restored.
+- **C-SNAKE/2 — boolean `--flag/--no-flag` pair was registered as a single comma-combined commander option** (`src/main.ts:957-975`). The schema-parser produced `flags: "--<flag>, --no-<flag>"` and the registration loop forwarded that string to `cmd.option(...)`. Commander does not parse the comma form the way Python click's `--flag/--no-flag` does — it routes both forms to the negated attribute and stores `false` for both, so `--has-solution` did not flip the value to `true`. Boolean schema flags now register as two separate `Option`s (`--<flag>` carrying the schema default + help, plus a hidden `--no-<flag>` companion); commander's auto-negation routes both to the same camelCase attribute and applies the correct value.
+
+### Added
+
+- **`tests/conformance/snake-case-kwargs.test.ts`** — runs the cross-language Algorithm C-SNAKE fixture (`apcore-cli/conformance/fixtures/snake-case-kwargs/cases.json`) against `buildModuleCommand`. Five cases cover positive flag, negation, default fallback, snake_case string flags, and a multi-flag combination. The same fixture is consumed verbatim by the Python and Rust SDK runners.
+
+
 ## [0.8.0] - 2026-05-08
 
 ### Security

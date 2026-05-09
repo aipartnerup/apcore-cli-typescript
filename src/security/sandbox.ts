@@ -9,6 +9,11 @@
  * Registry+Executor, and writes JSON to stdout.
  */
 
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve as resolvePath } from "node:path";
+
 import type { Executor } from "../cli.js";
 import { ModuleExecutionError } from "../errors.js";
 
@@ -91,11 +96,6 @@ export class Sandbox {
     moduleId: string,
     inputData: Record<string, unknown>,
   ): Promise<unknown> {
-    const { spawn } = await import("node:child_process");
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
-    const { mkdtempSync, rmSync } = await import("node:fs");
-
     const tmpDir = mkdtempSync(join(tmpdir(), "apcore_sandbox_"));
 
     const env = buildSandboxEnv(tmpDir);
@@ -107,7 +107,6 @@ export class Sandbox {
     //
     // Precedence: explicit `withExtensionsRoot(...)` builder value wins over
     // an inherited APCORE_EXTENSIONS_ROOT env var (mirrors Python parity).
-    const { resolve: resolvePath } = await import("node:path");
     if (this.extensionsRoot !== null) {
       env.APCORE_EXTENSIONS_ROOT = resolvePath(this.extensionsRoot);
     } else if (env.APCORE_EXTENSIONS_ROOT) {

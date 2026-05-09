@@ -955,7 +955,20 @@ export function buildModuleCommand(
 
   // Schema-generated options
   for (const opt of schemaOptions) {
-    if (opt.parseArg) {
+    if (opt.isBooleanFlag) {
+      // Commander does not parse the combined "--flag, --no-flag" spec the
+      // way Python click does — it ends up storing `false` for both forms.
+      // Register the affirmative form (carrying the schema default and help
+      // text) and a hidden `--no-<flag>` companion; commander auto-routes
+      // both to the same camelCase attribute and applies negation correctly.
+      const flagBase = opt.name.replace(/_/g, "-");
+      cmd.addOption(
+        new Option(`--${flagBase}`, opt.description).default(
+          opt.defaultValue as boolean,
+        ),
+      );
+      cmd.addOption(new Option(`--no-${flagBase}`).hideHelp());
+    } else if (opt.parseArg) {
       cmd.option(opt.flags, opt.description, opt.parseArg, opt.defaultValue);
     } else {
       cmd.option(opt.flags, opt.description, opt.defaultValue as string | boolean | undefined);
@@ -982,15 +995,19 @@ export function buildModuleCommand(
     );
     const approvalToken = options.approvalToken as string | undefined;
 
-    // Remove built-in keys from options to get schema kwargs
+    // Build schema kwargs from parsed options. Commander stores parsed flag
+    // values under camelCase keys (e.g. `--has-solution` -> `hasSolution`),
+    // but downstream module code keys off the original schema property names
+    // (snake_case) to match Python click and Rust clap behavior. Drive the
+    // mapping from schemaOptions so each value is written back under its
+    // original propName.
     const schemaKwargs: Record<string, unknown> = {};
-    const builtinKeys = new Set([
-      "input", "yes", "largeInput", "format", "fields", "sandbox", "verbose",
-      "dryRun", "trace", "stream", "strategy", "approvalTimeout", "approvalToken",
-    ]);
-    for (const [k, v] of Object.entries(options)) {
-      if (!builtinKeys.has(k)) {
-        schemaKwargs[k] = v;
+    for (const opt of schemaOptions) {
+      const commanderKey = opt.name.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+      if (commanderKey in options) {
+        schemaKwargs[opt.name] = options[commanderKey];
+      } else if (opt.name in options) {
+        schemaKwargs[opt.name] = options[opt.name];
       }
     }
 
