@@ -279,9 +279,37 @@ describe("formatExecResult()", () => {
     expect(output).toMatch(/"\{""name"":""Alice""\}"/);
   });
 
-  it("CSV output renders scalars as plain strings", () => {
+  it("CSV output renders scalars as plain strings (RFC 4180 CRLF)", () => {
     formatExecResult({ a: 1, b: "hi" }, "csv");
-    const lines = output.trim().split("\n");
-    expect(lines).toEqual(["a,b", "1,hi"]);
+    expect(output).toBe("a,b\r\n1,hi\r\n");
+  });
+
+  // --- Regression: heterogeneous-keys data loss (surfaced via aisee-cli) ---
+  //
+  // Before the toolkit-delegate refactor, the CSV branch derived headers from
+  // Object.keys(rows[0]) only, silently dropping fields that first appeared in
+  // later rows. aisee-cli's summarizeAction() emits optional `description` /
+  // `solution` fields, triggering exactly this bug.
+  it("CSV output includes union of keys across all rows (heterogeneous regression)", () => {
+    formatExecResult(
+      [
+        { sn: 1, title: "A" },
+        { sn: 2, title: "B", description: "later-row-only field" },
+      ],
+      "csv",
+    );
+    const [header, ...rows] = output.trimEnd().split("\r\n");
+    expect(header).toBe("sn,title,description");
+    expect(rows).toEqual(["1,A,", "2,B,later-row-only field"]);
+  });
+
+  it("CSV output emits empty cells for missing keys", () => {
+    formatExecResult([{ a: 1 }, { b: 2 }, { c: 3 }], "csv");
+    expect(output).toBe("a,b,c\r\n1,,\r\n,2,\r\n,,3\r\n");
+  });
+
+  it("JSONL output delegates to toolkit (LF terminator, canonical)", () => {
+    formatExecResult([{ a: 1 }, { b: 2 }], "jsonl");
+    expect(output).toBe('{"a":1}\n{"b":2}\n');
   });
 });

@@ -888,7 +888,7 @@ describe("Review Issue 3: standalone registry-unwired emits clear error", () => 
     }
 
     const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
-    expect(stderrText).toContain("no apcore-js registry wired");
+    expect(stderrText).toContain("no module registry wired");
     expect(stderrText).toContain("--extensions-dir");
     expect(exitSpy).toHaveBeenCalledWith(47);
 
@@ -913,7 +913,7 @@ describe("Review Issue 3: standalone registry-unwired emits clear error", () => 
     await cli.parseAsync(["apcli", "list"], { from: "user" });
 
     const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
-    expect(stderrText).not.toContain("no apcore-js registry wired");
+    expect(stderrText).not.toContain("no module registry wired");
     expect(registry.listModules).toHaveBeenCalled();
 
     stdoutSpy.mockRestore();

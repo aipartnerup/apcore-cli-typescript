@@ -299,7 +299,7 @@ export function buildProgramManPage(
   s.push(".SH ENVIRONMENT");
   s.push(".TP");
   s.push("\\fBAPCORE_EXTENSIONS_ROOT\\fR");
-  s.push("Path to the apcore extensions directory.");
+  s.push("Path to the extensions directory.");
   s.push(".TP");
   s.push("\\fBAPCORE_CLI_AUTO_APPROVE\\fR");
   s.push("Set to \\fB1\\fR to bypass approval prompts.");

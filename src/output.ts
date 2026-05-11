@@ -5,12 +5,13 @@
  */
 
 import yaml from "js-yaml";
+import { formatCsv, formatJsonl } from "apcore-toolkit";
 import { EXIT_CODES } from "./errors.js";
 import type { ModuleDescriptor, PreflightResult } from "./cli.js";
 
 const TOOLKIT_MISSING_HINT =
   "The 'markdown' and 'skill' output formats require the apcore-toolkit " +
-  "peer dependency. Install with: npm install apcore-toolkit@^0.6";
+  "peer dependency. Install with: npm install apcore-toolkit@^0.7";
 
 /**
  * Adapt the registry's `ModuleDescriptor` to the toolkit's `ScannedModule`
@@ -43,17 +44,6 @@ function descriptorToScanned(
     display,
     warnings: [],
   };
-}
-
-/**
- * Stringify a CSV cell value: scalars via String(), nested objects/arrays via
- * JSON.stringify so composite data survives a round-trip instead of rendering
- * as '[object Object]'.
- */
-function csvCellString(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -338,20 +328,12 @@ export function formatExecResult(
   const effective = resolveFormat(format);
 
   if (effective === "csv") {
-    if (typeof effective_result === "object" && !Array.isArray(effective_result) && effective_result !== null) {
-      const obj = effective_result as Record<string, unknown>;
-      const keys = Object.keys(obj);
-      const header = keys.map(escapeCsvField).join(",");
-      const row = keys.map((k) => escapeCsvField(csvCellString(obj[k]))).join(",");
-      process.stdout.write(header + "\n" + row + "\n");
-    } else if (Array.isArray(effective_result) && effective_result.length > 0 && typeof effective_result[0] === "object") {
-      const keys = Object.keys(effective_result[0] as Record<string, unknown>);
-      const header = keys.map(escapeCsvField).join(",");
-      const rows = effective_result.map((item) => {
-        const obj = item as Record<string, unknown>;
-        return keys.map((k) => escapeCsvField(csvCellString(obj[k]))).join(",");
-      });
-      process.stdout.write(header + "\n" + rows.join("\n") + "\n");
+    // Delegate to apcore-toolkit for byte-equivalent cross-SDK output.
+    // Toolkit's formatCsv: header = union of keys across all rows (fixes the
+    // prior heterogeneous-keys data-loss bug at this site).
+    const rows = toRowsForTabular(effective_result);
+    if (rows !== null) {
+      process.stdout.write(formatCsv(rows));
     } else {
       process.stdout.write(JSON.stringify(effective_result) + "\n");
     }
@@ -360,10 +342,9 @@ export function formatExecResult(
     // special YAML characters (':', leading '-', '@', '#', CR/LF, etc.).
     process.stdout.write(yaml.dump(effective_result, { lineWidth: -1 }));
   } else if (effective === "jsonl") {
-    if (Array.isArray(effective_result)) {
-      for (const item of effective_result) {
-        process.stdout.write(JSON.stringify(item) + "\n");
-      }
+    const rows = toRowsForTabular(effective_result);
+    if (rows !== null) {
+      process.stdout.write(formatJsonl(rows));
     } else {
       process.stdout.write(JSON.stringify(effective_result) + "\n");
     }
@@ -387,13 +368,26 @@ export function formatExecResult(
 }
 
 /**
- * Escape a CSV field value — wrap in quotes if it contains comma, quote, or newline.
+ * Coerce an exec result into the row-shape expected by the toolkit's tabular
+ * formatters: an iterable of `Record<string, unknown>`. Returns `null` if the
+ * shape doesn't fit (e.g. scalar, empty array, array of non-objects) so the
+ * caller can fall back to JSON emission.
  */
-function escapeCsvField(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n") || value.includes("\r")) {
-    return '"' + value.replace(/"/g, '""') + '"';
+function toRowsForTabular(
+  value: unknown,
+): Record<string, unknown>[] | null {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    if (!value.every((item) => typeof item === "object" && item !== null && !Array.isArray(item))) {
+      return null;
+    }
+    return value as Record<string, unknown>[];
   }
-  return value;
+  if (typeof value === "object") {
+    return [value as Record<string, unknown>];
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

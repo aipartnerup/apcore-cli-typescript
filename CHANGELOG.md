@@ -5,6 +5,35 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-05-11
+
+### Fixed
+
+- **CSV `--format csv` heterogeneous-keys data loss** — `formatExecResult` previously derived CSV headers from `Object.keys(rows[0])` only, silently dropping fields that first appeared in later rows. Surfaced via aisee-cli's `summarizeAction()` which emits optional `description` / `solution` fields. The header is now the **union of keys across all rows** in insertion-order. `src/output.ts:340-357`.
+- **CSV line terminator** — now `\r\n` per RFC 4180 (was `\n`). Existing Excel + downstream-parser compatibility improves significantly.
+- **CSV nested-value serialization** — now goes through the toolkit's canonical JSON encoder (compact, insertion-order, unicode-preserved). Behavior was already correct via `JSON.stringify`, but the contract is now enforced at the toolkit layer.
+
+### Changed
+
+- **User-visible help/man/completion/error text no longer leaks the `apcore` / `apcore-js` framework name** to end users of downstream CLIs built on apcore-cli. Affected strings: footer hint (`Use --verbose to show all options (including built-in apcore options)` → `… (including built-in options)`, `src/main.ts:947`), `init` group description (`Scaffold new apcore modules` → `Scaffold new modules`, `src/init-cmd.ts:82`), top-level CLI description (`… execute apcore modules from the command line` → `… execute modules from the command line`, `src/main.ts:835`), standalone unwired-registry error message (`Error: no apcore-js registry wired.` → `Error: no module registry wired.`, `src/main.ts:619`), and man-page `ENVIRONMENT` text (`Path to the apcore extensions directory.` → `Path to the extensions directory.`, `src/shell.ts:302`). README's `--verbose` row updated to match. Two `tests/main.test.ts` assertions (`:891`, `:916`) updated to the new error string. Logger names, source comments, type comments, and environment-variable identifiers (`APCORE_*`) are unchanged — only descriptive copy that appears in `--help`, shell completion, `man` output, or user-facing error messages. Cross-SDK parity with Python 0.8.1 and Rust 0.8.1.
+
+### Changed (breaking peer-dep semantics)
+
+- **`apcore-toolkit` promoted from optional to REQUIRED peer dependency** (`>=0.7.0`). All `--format` operations now go through the toolkit's reference implementation for csv/jsonl/markdown/skill (was only markdown/skill). Consumers that did not install the optional peer must add it. `package.json` peer-dependency-meta `optional: true` removed.
+
+### Removed
+
+- `csvCellString` and `escapeCsvField` private helpers — replaced by `apcore_toolkit.formatCsv()` and the toolkit's RFC 4180 internals.
+
+### Why
+
+Per-SDK CSV reimplementations had accumulated divergence: Python emitted Python repr `{'k': 'v'}`, TS dropped heterogeneous keys, Rust used `\n` not CRLF. The spec MUST language couldn't enforce conformance on downstream consumers (e.g. aisee-cli) that reimplemented. See ADR-09 in `apcore-cli/docs/tech-design.md` for the byte-equivalent vs SDK-native tier split.
+
+### Migration
+
+Downstream consumers using only `json` / `table` formats are unaffected at runtime but need `apcore-toolkit@^0.7` installed alongside `apcore-cli@^0.9` (previously optional). aisee-cli and similar adapters get the CSV bug fix automatically on upgrade.
+
+
 ## [0.8.1] - 2026-05-09
 
 ### Fixed

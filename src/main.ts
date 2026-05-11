@@ -616,7 +616,7 @@ function _registerApcliSubcommands(
   // whenever list/describe actions actually reach into registry methods.
   const emitUnwiredError = (): never => {
     process.stderr.write(
-      "Error: no apcore-js registry wired. In standalone mode, pass " +
+      "Error: no module registry wired. In standalone mode, pass " +
         "--extensions-dir <path> to enable module discovery.\n",
     );
     process.exit(EXIT_CODES.CONFIG_INVALID);
@@ -832,7 +832,7 @@ export function main(progName?: string): void {
     progName,
     verbose: verboseHelp,
     version: VERSION,
-    description: `${progName ?? "apcore-cli"} — execute apcore modules from the command line`,
+    description: `${progName ?? "apcore-cli"} — execute modules from the command line`,
   });
 
   try {
@@ -944,7 +944,7 @@ export function buildModuleCommand(
   // Help footer: verbose hint + optional docs link
   const footerParts: string[] = [];
   if (!verbose) {
-    footerParts.push("Use --verbose to show all options (including built-in apcore options).");
+    footerParts.push("Use --verbose to show all options (including built-in options).");
   }
   if (docsUrl) {
     footerParts.push(`Docs: ${docsUrl}/commands/${effectiveCmdName}`);

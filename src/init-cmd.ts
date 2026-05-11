@@ -79,7 +79,7 @@ function renderTemplate(template: string, context: Record<string, string>): stri
  * Register the init command group on the CLI program.
  */
 export function registerInitCommand(cli: Command): void {
-  const initGroup = cli.command("init").description("Scaffold new apcore modules.");
+  const initGroup = cli.command("init").description("Scaffold new modules.");
 
   initGroup
     .command("module <module-id>")
