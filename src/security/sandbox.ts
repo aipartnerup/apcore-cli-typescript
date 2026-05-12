@@ -150,6 +150,13 @@ export class Sandbox {
       stderr += chunk.toString();
     });
 
+    // Register an 'error' listener BEFORE .write() so an EPIPE from a
+    // child that exited before consuming stdin does not surface as an
+    // unhandled exception. The child's exit/close handlers below already
+    // own reject() — swallowing the stdin error here is intentional.
+    child.stdin.on("error", () => {
+      /* swallow EPIPE when child exits before consuming stdin */
+    });
     child.stdin.write(JSON.stringify(inputData));
     child.stdin.end();
 
@@ -258,10 +265,21 @@ export async function runSandboxRunner(moduleId: string): Promise<void> {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Test-only seam: re-exported under an underscore-prefixed name so unit
+ * tests can verify env-forwarding behavior (D11-009 empty-string parity)
+ * without spawning a real subprocess. Production code MUST NOT call this.
+ */
+export function _buildSandboxEnvForTesting(tmpDir: string): NodeJS.ProcessEnv {
+  return buildSandboxEnv(tmpDir);
+}
+
 function buildSandboxEnv(tmpDir: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const key of SANDBOX_ALLOW_KEYS) {
-    if (process.env[key]) env[key] = process.env[key];
+    // Forward empty-string values uniformly with Python/Rust (D11-009).
+    // Treating "" as "unset" diverges from POSIX semantics callers may rely on.
+    if (process.env[key] !== undefined) env[key] = process.env[key];
   }
   for (const [key, val] of Object.entries(process.env)) {
     if (

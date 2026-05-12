@@ -104,7 +104,7 @@ import { EventEmitter } from "node:events";
 type FakeChild = EventEmitter & {
   stdout: EventEmitter;
   stderr: EventEmitter;
-  stdin: { write: () => void; end: () => void };
+  stdin: { write: () => void; end: () => void; on: () => unknown };
   kill: ReturnType<typeof vi.fn>;
 };
 
@@ -127,7 +127,35 @@ function makeFakeChild(): FakeChild {
   const child = new EventEmitter() as FakeChild;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
-  child.stdin = { write: () => undefined, end: () => undefined };
+  // D11-008: production code now attaches an 'error' listener to stdin
+  // before .write(); fake stdin must accept .on() to avoid a TypeError.
+  child.stdin = {
+    write: () => undefined,
+    end: () => undefined,
+    on: () => undefined,
+  };
+  child.kill = vi.fn();
+  return child;
+}
+
+// Like makeFakeChild but stdin is a real EventEmitter so an 'error' event
+// can be observed. D11-008 fix wires an error listener BEFORE the .write()
+// call so an EPIPE from a fast-exiting child does not surface as an
+// unhandled exception.
+type FakeChildWithStdinEmitter = EventEmitter & {
+  stdout: EventEmitter;
+  stderr: EventEmitter;
+  stdin: EventEmitter & { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn>; listenerCount: (event: string) => number };
+  kill: ReturnType<typeof vi.fn>;
+};
+function makeFakeChildWithStdinEmitter(): FakeChildWithStdinEmitter {
+  const child = new EventEmitter() as FakeChildWithStdinEmitter;
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  const stdin = new EventEmitter() as FakeChildWithStdinEmitter["stdin"];
+  stdin.write = vi.fn();
+  stdin.end = vi.fn();
+  child.stdin = stdin;
   child.kill = vi.fn();
   return child;
 }
@@ -219,6 +247,41 @@ describe("Sandbox subprocess wiring (mocked spawn)", () => {
   });
 
   // -------------------------------------------------------------------------
+  // D11-008 — child.stdin must have an 'error' listener BEFORE .write()
+  // so an EPIPE from a fast-exiting child does not bubble up as an
+  // unhandled exception.
+  // -------------------------------------------------------------------------
+  it("attaches an 'error' listener to child.stdin before writing (D11-008)", async () => {
+    const fakeChild = makeFakeChildWithStdinEmitter();
+    let captured: FakeChildWithStdinEmitter | null = null;
+    __spawnImpl = () => {
+      captured = fakeChild;
+      return fakeChild;
+    };
+
+    const sandbox = new Sandbox(true, 5);
+    const promise = sandbox.execute("test.mod", { x: 1 }, mockExecutor);
+
+    for (let i = 0; i < 10 && !captured; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(captured).not.toBeNull();
+    // The fix MUST register a listener BEFORE the .write() call.
+    expect(captured!.stdin.listenerCount("error")).toBeGreaterThanOrEqual(1);
+
+    // Now simulate the EPIPE-like surface and confirm it does NOT throw
+    // an "Unhandled error" — emitting an event with no listeners would
+    // throw synchronously.
+    expect(() => captured!.stdin.emit("error", new Error("EPIPE"))).not.toThrow();
+
+    // Let the promise settle so we don't leak it.
+    fakeChild.stdout.emit("data", Buffer.from("{}"));
+    fakeChild.emit("close", 0);
+    await promise.catch(() => undefined);
+    __spawnImpl = null;
+  });
+
+  // -------------------------------------------------------------------------
   // D1-004 — withExtensionsRoot wins over the inherited env var
   // -------------------------------------------------------------------------
   it("withExtensionsRoot overrides APCORE_EXTENSIONS_ROOT in the child env (D1-004)", async () => {
@@ -259,5 +322,27 @@ describe("Sandbox subprocess wiring (mocked spawn)", () => {
       process.env.APCORE_EXTENSIONS_ROOT = savedRoot;
     }
     __spawnImpl = null;
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D11-009 — buildSandboxEnv must forward empty-string allow-list env values
+// (parity with Python/Rust which treat empty-string and unset asymmetrically).
+// ---------------------------------------------------------------------------
+describe("buildSandboxEnv empty-string forwarding (D11-009)", () => {
+  it("forwards an allow-listed PATH='' entry instead of dropping it", async () => {
+    const savedPath = process.env.PATH;
+    process.env.PATH = "";
+    try {
+      const { _buildSandboxEnvForTesting } = await import(
+        "../../src/security/sandbox.js?d11-009=" + Date.now()
+      );
+      const env = _buildSandboxEnvForTesting("/tmp/x");
+      expect(Object.prototype.hasOwnProperty.call(env, "PATH")).toBe(true);
+      expect(env.PATH).toBe("");
+    } finally {
+      if (savedPath === undefined) delete process.env.PATH;
+      else process.env.PATH = savedPath;
+    }
   });
 });
