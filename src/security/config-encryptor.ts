@@ -180,7 +180,10 @@ export class ConfigEncryptor {
       ConfigEncryptor.weakFallbackWarned = true;
     }
     const hostname = os.hostname();
-    const username = process.env.USER ?? process.env.USERNAME ?? "unknown";
+    // 4-tier POSIX-aligned chain: USER → LOGNAME → USERNAME → "unknown".
+    // Matches Python (auth/config_encryptor.py) and Rust (security/config_encryptor.rs).
+    const username =
+      process.env.USER ?? process.env.LOGNAME ?? process.env.USERNAME ?? "unknown";
     const material = `${hostname}:${username}`;
     return crypto.pbkdf2Sync(material, salt, PBKDF2_ITERATIONS, 32, "sha256");
   }
@@ -216,7 +219,9 @@ export class ConfigEncryptor {
     const tag = data.subarray(12, 28);
     const ct = data.subarray(28);
     const hostname = os.hostname();
-    const username = process.env.USER ?? process.env.USERNAME ?? "unknown";
+    // 4-tier POSIX-aligned chain — see deriveKey() for rationale.
+    const username =
+      process.env.USER ?? process.env.LOGNAME ?? process.env.USERNAME ?? "unknown";
     const passphrase = process.env.APCORE_CLI_CONFIG_PASSPHRASE;
     const materials: string[] = passphrase
       ? [passphrase, `${hostname}:${username}`]

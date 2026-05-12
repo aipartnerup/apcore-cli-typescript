@@ -153,6 +153,88 @@ describe("ConfigEncryptor", () => {
   });
 });
 
+// Review fix D10-001: USER → LOGNAME → USERNAME → "unknown" 4-tier fallback
+// chain in deriveKey() and aesDecryptV1(). Matches Python/Rust which both
+// honor POSIX $LOGNAME between $USER and $USERNAME.
+describe("LOGNAME fallback in KDF (D10-001)", () => {
+  const origUser = process.env.USER;
+  const origLogname = process.env.LOGNAME;
+  const origUsername = process.env.USERNAME;
+  const origPassphrase = process.env.APCORE_CLI_CONFIG_PASSPHRASE;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    delete process.env.APCORE_CLI_CONFIG_PASSPHRASE;
+  });
+
+  afterEach(() => {
+    if (origUser === undefined) delete process.env.USER;
+    else process.env.USER = origUser;
+    if (origLogname === undefined) delete process.env.LOGNAME;
+    else process.env.LOGNAME = origLogname;
+    if (origUsername === undefined) delete process.env.USERNAME;
+    else process.env.USERNAME = origUsername;
+    if (origPassphrase === undefined) delete process.env.APCORE_CLI_CONFIG_PASSPHRASE;
+    else process.env.APCORE_CLI_CONFIG_PASSPHRASE = origPassphrase;
+    stderrSpy.mockRestore();
+  });
+
+  it("encrypt/decrypt round-trip across (USER=alice) and (LOGNAME=alice, USER unset)", async () => {
+    const { ConfigEncryptor: Fresh } = await import(
+      "../../src/security/config-encryptor.js?d10-001-a=" + Date.now()
+    );
+
+    // Encrypt with USER=alice, everything else unset.
+    process.env.USER = "alice";
+    delete process.env.LOGNAME;
+    delete process.env.USERNAME;
+    const encA = new Fresh();
+    const storedA = await encA.store("k", "payload");
+    if (!storedA.startsWith("enc:")) {
+      return; // keyring intercepted — skip
+    }
+
+    // Decrypt with USER unset, LOGNAME=alice. Should derive same key.
+    delete process.env.USER;
+    process.env.LOGNAME = "alice";
+    delete process.env.USERNAME;
+    const { ConfigEncryptor: Fresh2 } = await import(
+      "../../src/security/config-encryptor.js?d10-001-b=" + Date.now()
+    );
+    const encB = new Fresh2();
+    expect(await encB.retrieve(storedA, "k")).toBe("payload");
+  });
+
+  it("v1 legacy decrypt honors LOGNAME when USER is unset", async () => {
+    // Build a v1-format ciphertext keyed off username="alice" while only
+    // LOGNAME is exported. Pre-fix the code resolved username to "unknown"
+    // and would fail to decrypt.
+    const crypto = await import("node:crypto");
+    const os = await import("node:os");
+    const hostname = os.hostname();
+    const material = `${hostname}:alice`;
+    const staticSalt = Buffer.from("apcore-cli-config-v1");
+    const key = crypto.pbkdf2Sync(material, staticSalt, 600_000, 32, "sha256");
+    const nonce = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", key, nonce);
+    const ct = Buffer.concat([cipher.update("legacy_payload", "utf-8"), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const raw = Buffer.concat([nonce, tag, ct]);
+    const v1Ref = `enc:${raw.toString("base64")}`;
+
+    delete process.env.USER;
+    process.env.LOGNAME = "alice";
+    delete process.env.USERNAME;
+
+    const { ConfigEncryptor: Fresh } = await import(
+      "../../src/security/config-encryptor.js?d10-001-v1=" + Date.now()
+    );
+    const enc = new Fresh();
+    expect(await enc.retrieve(v1Ref, "k")).toBe("legacy_payload");
+  });
+});
+
 describe("store() keyring error handling (D10-003)", () => {
   it("propagates keyring errors as ConfigDecryptionError instead of silently downgrading", async () => {
     // Cross-SDK contract: when getKeytar() returns a keytar reference but
