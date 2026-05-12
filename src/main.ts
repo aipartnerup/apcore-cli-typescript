@@ -47,7 +47,7 @@ import { canonicalFormatHelp } from "./canonical-help.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Whether --verbose was passed (controls help detail level).
+ * Whether --all-options was passed (controls help detail level).
  *
  * Module-private mutable flag. The setter `setVerboseHelp` is the sanctioned
  * public API; raw `let`-binding access from outside this module is an audit
@@ -55,7 +55,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  */
 let verboseHelp = false;
 
-/** Set the verbose help flag. When false, built-in options are hidden from help. */
+/** Set the all-options help flag. When false, built-in options are hidden from help. */
 export function setVerboseHelp(verbose: boolean): void {
   verboseHelp = verbose;
 }
@@ -77,9 +77,9 @@ export function setDocsUrl(url: string | null): void {
   docsUrl = url;
 }
 
-/** Check if --verbose is present in process.argv (pre-parse, before Commander). */
+/** Check if --all-options is present in process.argv (pre-parse, before Commander). */
 function hasVerboseFlag(): boolean {
-  return process.argv.includes("--verbose");
+  return process.argv.includes("--all-options");
 }
 
 /**
@@ -415,7 +415,7 @@ export function createCli(
     .addHelpCommand("help [command]", "Print this message or the help of the given subcommand(s)")
     .description(appDescription ?? `${resolvedProgName} CLI`)
     .option("--log-level <level>", "Logging level (DEBUG|INFO|WARNING|ERROR)", "WARNING")
-    .option("--verbose", "Show all options in help output (including built-in options)");
+    .option("--all-options", "Show all options in help output (including built-in options)");
   if (appVersion) {
     program.version(appVersion, "-V, --version", "Print version");
   }
@@ -523,7 +523,7 @@ export function createCli(
   // Footer hints for discoverability
   program.addHelpText("after", [
     "",
-    "Use --help --verbose to show all options (including built-in options).",
+    "Use --help --all-options to show all options (including built-in options).",
     "Use --help --man to display a formatted man page.",
   ].join("\n"));
 
@@ -892,7 +892,7 @@ export function buildModuleCommand(
 
   const cmd = new Command(effectiveCmdName).description(cmdHelp);
 
-  // Built-in options (hidden unless --verbose)
+  // Built-in options (hidden unless --all-options)
   const inputOpt = new Option("--input <source>", "Read JSON input from a file path, or use '-' to read from stdin pipe");
   const yesOpt = new Option("-y, --yes", "Skip interactive approval prompts (for scripts and CI)").default(false);
   const largeInputOpt = new Option("--large-input", "Allow stdin input larger than 10MB (default limit protects against accidental pipes)").default(false);
@@ -941,10 +941,10 @@ export function buildModuleCommand(
   cmd.addOption(approvalTimeoutOpt);
   cmd.addOption(approvalTokenOpt);
 
-  // Help footer: verbose hint + optional docs link
+  // Help footer: --all-options hint + optional docs link
   const footerParts: string[] = [];
   if (!verbose) {
-    footerParts.push("Use --verbose to show all options (including built-in options).");
+    footerParts.push("Use --all-options to show all options (including built-in options).");
   }
   if (docsUrl) {
     footerParts.push(`Docs: ${docsUrl}/commands/${effectiveCmdName}`);

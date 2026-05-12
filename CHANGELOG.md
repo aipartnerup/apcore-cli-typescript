@@ -5,7 +5,7 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0] - 2026-05-11
+## [0.9.0] - 2026-05-12
 
 ### Fixed
 
@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **User-visible help/man/completion/error text no longer leaks the `apcore` / `apcore-js` framework name** to end users of downstream CLIs built on apcore-cli. Affected strings: footer hint (`Use --verbose to show all options (including built-in apcore options)` → `… (including built-in options)`, `src/main.ts:947`), `init` group description (`Scaffold new apcore modules` → `Scaffold new modules`, `src/init-cmd.ts:82`), top-level CLI description (`… execute apcore modules from the command line` → `… execute modules from the command line`, `src/main.ts:835`), standalone unwired-registry error message (`Error: no apcore-js registry wired.` → `Error: no module registry wired.`, `src/main.ts:619`), and man-page `ENVIRONMENT` text (`Path to the apcore extensions directory.` → `Path to the extensions directory.`, `src/shell.ts:302`). README's `--verbose` row updated to match. Two `tests/main.test.ts` assertions (`:891`, `:916`) updated to the new error string. Logger names, source comments, type comments, and environment-variable identifiers (`APCORE_*`) are unchanged — only descriptive copy that appears in `--help`, shell completion, `man` output, or user-facing error messages. Cross-SDK parity with Python 0.8.1 and Rust 0.8.1.
+
+### Changed (breaking CLI surface)
+
+- **Global `--verbose` flag renamed to `--all-options`** — The help-display flag is now `--all-options`; use `apcore-cli module --help --all-options` to reveal hidden built-in options. `verbose` is removed from the reserved schema property names set — module schemas may now freely define `verbose: boolean` for runtime output control. Tracked in [apcore-cli#21](https://github.com/aiperceivable/apcore-cli/issues/21).
 
 ### Changed (breaking peer-dep semantics)
 

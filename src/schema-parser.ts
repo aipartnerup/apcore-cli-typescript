@@ -71,7 +71,7 @@ export function extractHelp(propSchema: Record<string, unknown>, maxLength = 100
 /** Reserved CLI option names that cannot be used by schema properties. */
 const RESERVED_NAMES = new Set([
   "input", "yes", "large_input", "format", "fields", "sandbox",
-  "verbose", "dry_run", "trace", "stream", "strategy",
+  "all_options", "dry_run", "trace", "stream", "strategy",
   "approval_timeout", "approval_token",
 ]);
 

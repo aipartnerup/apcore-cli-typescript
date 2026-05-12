@@ -325,7 +325,7 @@ export function buildProgramManPage(
   }
 
   s.push(".SH SEE ALSO");
-  s.push(`\\fB${progName} \\-\\-help \\-\\-verbose\\fR for full option list.`);
+  s.push(`\\fB${progName} \\-\\-help \\-\\-all\\-options\\fR for full option list.`);
   if (docsUrl) {
     s.push(`.PP\nFull documentation at \\fI${roffEscape(docsUrl)}\\fR`);
   }

@@ -265,7 +265,7 @@ describe("schemaToCliOptions()", () => {
   });
 
   it.each([
-    "fields", "verbose", "trace", "stream", "strategy",
+    "fields", "all_options", "trace", "stream", "strategy",
     "approval_timeout", "approval_token", "large_input",
   ])("exits 48 for '%s' reserved name", (propName) => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
@@ -279,6 +279,15 @@ describe("schemaToCliOptions()", () => {
       }),
     ).toThrow("exit");
     expect(exitSpy).toHaveBeenCalledWith(48);
+  });
+
+  // FR-DISP-007: 'verbose' is no longer reserved — schemas may use it freely.
+  it("allows 'verbose' as a schema boolean property (no longer reserved)", () => {
+    const result = schemaToCliOptions({
+      properties: { verbose: { type: "boolean" } },
+    });
+    expect(result.length).toBe(1);
+    expect(result[0].name).toBe("verbose");
   });
 
   // D11-004: reserved-name check must precede collision check
