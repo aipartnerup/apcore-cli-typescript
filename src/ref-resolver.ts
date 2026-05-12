@@ -4,7 +4,7 @@
  * Protocol spec: Schema resolution & $ref handling
  */
 
-import { EXIT_CODES } from "./errors.js";
+import { CircularRefError, MaxDepthExceededError, UnresolvableRefError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // resolveRefs
@@ -58,17 +58,15 @@ function resolveNode(
     const refPath = obj.$ref as string;
 
     if (depth >= maxDepth) {
-      process.stderr.write(
-        `Error: $ref resolution depth exceeded maximum of ${maxDepth} for module '${moduleId}'.\n`,
+      throw new MaxDepthExceededError(
+        `$ref resolution depth exceeded maximum of ${maxDepth} for module '${moduleId}'.`,
       );
-      process.exit(EXIT_CODES.SCHEMA_CIRCULAR_REF);
     }
 
     if (visited.has(refPath)) {
-      process.stderr.write(
-        `Error: Circular $ref detected in schema for module '${moduleId}' at path '${refPath}'.\n`,
+      throw new CircularRefError(
+        `Circular $ref detected in schema for module '${moduleId}' at path '${refPath}'.`,
       );
-      process.exit(EXIT_CODES.SCHEMA_CIRCULAR_REF);
     }
 
     // Parse ref target: extract key from "#/$defs/Address" → "Address"
@@ -76,10 +74,9 @@ function resolveNode(
     const key = parts[parts.length - 1];
 
     if (!(key in defs)) {
-      process.stderr.write(
-        `Error: Unresolvable $ref '${refPath}' in schema for module '${moduleId}'.\n`,
+      throw new UnresolvableRefError(
+        `Unresolvable $ref '${refPath}' in schema for module '${moduleId}'.`,
       );
-      process.exit(EXIT_CODES.SCHEMA_VALIDATION_ERROR);
     }
 
     const newVisited = new Set(visited);
@@ -203,22 +200,19 @@ function resolveNode(
     }
   }
 
-  // Recursively process nested properties.
-  // Audit D11-NEW-003 (2026-05-08): max_depth counts $ref hops only — plain
-  // nested-properties recursion does NOT increment `depth`. Aligned with
-  // Rust's interpretation of the spec ("Maximum $ref resolution recursion
-  // depth", schema-parser.md §Contract: resolve_refs).
-  if ("properties" in obj && typeof obj.properties === "object" && obj.properties !== null) {
-    const props = obj.properties as Record<string, unknown>;
-    for (const [propName, propSchema] of Object.entries(props)) {
-      props[propName] = resolveNode(
-        propSchema,
-        defs,
-        visited,
-        depth,
-        maxDepth,
-        moduleId,
-      );
+  // Recursively process all keyword sub-schemas.
+  // Walk every key whose value is an object (or array of objects) that may contain
+  // $ref — this includes `properties`, `items`, `additionalProperties`,
+  // `patternProperties`, `prefixItems`, `not`, `if`/`then`/`else`, etc.
+  // max_depth counts $ref hops only — plain recursion does NOT increment `depth`.
+  // Aligned with Rust ref_resolver.rs which iterates all keys (more correct for
+  // arbitrary JSON Schema than properties-only walking).
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === "allOf" || k === "anyOf" || k === "oneOf" || k === "$ref") {
+      continue; // already handled above
+    }
+    if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+      obj[k] = resolveNode(v, defs, visited, depth, maxDepth, moduleId);
     }
   }
 

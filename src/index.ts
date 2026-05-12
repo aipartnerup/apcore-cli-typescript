@@ -15,7 +15,7 @@
 // behaviour depends on the importer's bundler). Dropped from the re-export
 // list. Add `getVerboseHelp` / `getDocsUrl` getters in main.ts if read access
 // is later needed.
-export { createCli, main, buildModuleCommand, validateModuleId, collectInput, reconvertEnumValues, applyToolkitIntegration, setVerboseHelp, setDocsUrl } from "./main.js";
+export { createCli, main, buildModuleCommand, validateModuleId, collectInput, reconvertEnumValues, applyToolkitIntegration, setAllOptionsHelp, setVerboseHelp, setDocsUrl } from "./main.js";
 export type { OptionConfig, CreateCliOptions, APCore, ApplyToolkitIntegrationOptions } from "./main.js";
 
 // Command grouping (GroupedModuleGroup is the default click.Group; LazyModuleGroup
@@ -79,6 +79,9 @@ export {
   ModuleExecutionError,
   ModuleNotFoundError,
   SchemaValidationError,
+  MaxDepthExceededError,
+  CircularRefError,
+  UnresolvableRefError,
   EXIT_CODES,
   exitCodeForError,
 } from "./errors.js";

@@ -154,8 +154,16 @@ export class Sandbox {
     child.stdin.end();
 
     return new Promise<unknown>((resolve, reject) => {
+      // Cleanup helper — called from all terminal branches (close, timeout, error)
+      // to ensure tempdir is always removed. Python/Rust use context-manager / Drop
+      // which guarantees cleanup on any exit path; this mirrors that invariant.
+      const cleanup = (): void => {
+        try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+      };
+
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
+        cleanup();
         reject(
           new ModuleExecutionError(
             `Sandbox module '${moduleId}' timed out after ${this.timeoutSeconds}s.`,
@@ -165,7 +173,7 @@ export class Sandbox {
 
       child.on("close", (code) => {
         clearTimeout(timer);
-        try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+        cleanup();
 
         if (sizeExceeded) {
           const limitMiB = Math.floor(outputCap / (1024 * 1024));
@@ -191,6 +199,7 @@ export class Sandbox {
 
       child.on("error", (err) => {
         clearTimeout(timer);
+        cleanup();
         reject(new ModuleExecutionError(`Failed to spawn sandbox process: ${err.message}`));
       });
     });

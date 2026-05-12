@@ -8,7 +8,7 @@ Terminal adapter for apcore. Execute AI-Perceivable modules from the command lin
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-18%2B-blue.svg)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-275%2B%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)]()
 
 | | |
 |---|---|
@@ -46,10 +46,10 @@ Terminal adapter for apcore. Execute AI-Perceivable modules from the command lin
 ## Installation
 
 ```bash
-pnpm add apcore-cli apcore-js
+pnpm add apcore-cli apcore-js apcore-toolkit
 ```
 
-Requires Node.js 18+, `apcore-js >= 0.21.0`, and `apcore-toolkit >= 0.7.0`.
+Requires Node.js 18+, `apcore-js >= 0.21.0`, and `apcore-toolkit >= 0.7.0` (required peer dep as of v0.9.0).
 
 **v0.9.0 breaking change:** `apcore-toolkit` is now a **required** peer dependency (previously optional). All `--format` operations route through the toolkit's byte-equivalent reference implementations for csv / jsonl / markdown / skill. See [tech-design ADR-09](https://github.com/aiperceivable/apcore-cli/blob/main/docs/tech-design.md) for the rationale and migration notes.
 
@@ -150,7 +150,7 @@ your-project/
 No changes to your project. Just install and run:
 
 ```bash
-pnpm add apcore-cli apcore-js
+pnpm add apcore-cli apcore-js apcore-toolkit
 apcore-cli --extensions-dir ./extensions list
 apcore-cli --extensions-dir ./extensions math.add --a 5 --b 10
 ```
@@ -234,12 +234,17 @@ The canonical 13 `apcli` subcommands:
 | `apcli init module <id>` | Scaffold a new module (TS/JS/YAML binding) into the extensions or commands directory (see `registerInitCommand` in `src/init-cmd.ts`) |
 | `apcli validate` | Validate modules and configuration against JSON Schema (see `registerValidateCommand` in `src/discovery.ts`) |
 
-**Shell integration**
+**Shell integration** (under `apcli` group)
 
 | Command | Description |
 |---------|-------------|
 | `apcli completion <shell>` | Generate shell completion script for bash / zsh / fish (see `registerCompletionCommand` in `src/shell.ts`) |
-| `man [command]` (root) | Generate a man page in roff format for a single command or the whole program (see `configureManHelp` in `src/shell.ts`). Stays at the root (meta-command). |
+
+**Root meta-commands** (NOT under `apcli` — invoked directly on the host CLI)
+
+| Command | Description |
+|---------|-------------|
+| `<cli> --help --man [command]` | Generate a man page in roff format for a single command or the whole program (see `configureManHelp` in `src/shell.ts`). This is a root-level option, not an `apcli` subcommand. |
 
 #### Standalone vs. embedded surfaces
 

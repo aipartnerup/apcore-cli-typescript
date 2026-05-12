@@ -56,6 +56,30 @@ export class SchemaValidationError extends Error {
   }
 }
 
+/** Thrown when $ref resolution depth exceeds the configured maximum. */
+export class MaxDepthExceededError extends Error {
+  constructor(message = "Schema $ref resolution depth exceeded") {
+    super(message);
+    this.name = "MaxDepthExceededError";
+  }
+}
+
+/** Thrown when a circular $ref is detected during schema resolution. */
+export class CircularRefError extends Error {
+  constructor(message = "Circular $ref detected in schema") {
+    super(message);
+    this.name = "CircularRefError";
+  }
+}
+
+/** Thrown when a $ref target cannot be found in $defs/definitions. */
+export class UnresolvableRefError extends Error {
+  constructor(message = "Unresolvable $ref in schema") {
+    super(message);
+    this.name = "UnresolvableRefError";
+  }
+}
+
 /** Thrown when a module is not found. */
 export class ModuleNotFoundError extends Error {
   constructor(message = "Module not found") {
@@ -120,6 +144,12 @@ export function exitCodeForError(error: unknown): ExitCode {
     return EXIT_CODES.CONFIG_INVALID;
   }
   if (error instanceof SchemaValidationError) {
+    return EXIT_CODES.SCHEMA_VALIDATION_ERROR;
+  }
+  if (error instanceof MaxDepthExceededError || error instanceof CircularRefError) {
+    return EXIT_CODES.SCHEMA_CIRCULAR_REF;
+  }
+  if (error instanceof UnresolvableRefError) {
     return EXIT_CODES.SCHEMA_VALIDATION_ERROR;
   }
   if (error instanceof ModuleNotFoundError) {

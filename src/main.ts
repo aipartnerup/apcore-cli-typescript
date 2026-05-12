@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
 import { Command, CommanderError, Option } from "commander";
-import { EXIT_CODES, exitCodeForError } from "./errors.js";
+import { EXIT_CODES, exitCodeForError, MaxDepthExceededError, CircularRefError, UnresolvableRefError } from "./errors.js";
 import { resolveRefs } from "./ref-resolver.js";
 import { schemaToCliOptions } from "./schema-parser.js";
 import { checkApproval } from "./approval.js";
@@ -56,8 +56,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let verboseHelp = false;
 
 /** Set the all-options help flag. When false, built-in options are hidden from help. */
+export function setAllOptionsHelp(allOptions: boolean): void {
+  verboseHelp = allOptions;
+}
+
+/** @deprecated Use {@link setAllOptionsHelp} instead. Kept for backward compatibility. */
 export function setVerboseHelp(verbose: boolean): void {
-  verboseHelp = verbose;
+  setAllOptionsHelp(verbose);
 }
 
 /**
@@ -316,12 +321,13 @@ export interface CreateCliOptions {
  *
  * @param extensionsDirOrOpts  Path to extensions directory, or a CreateCliOptions object.
  * @param progName       Program name shown in help (default: apcore-cli)
- * @param verbose        Show verbose help output
+ * @param allOptions     Show all options in help output (controls `--all-options` behaviour;
+ *                       parameter was named `verbose` prior to v0.9.0)
  */
 export function createCli(
   extensionsDirOrOpts?: string | CreateCliOptions,
   progName?: string,
-  verbose = false,
+  allOptions = false,
 ): Command {
   // Normalise overloaded first argument.
   let extensionsDir: string | undefined;
@@ -338,7 +344,7 @@ export function createCli(
   if (typeof extensionsDirOrOpts === "object" && extensionsDirOrOpts !== null) {
     extensionsDir = extensionsDirOrOpts.extensionsDir;
     progName = extensionsDirOrOpts.progName ?? progName;
-    verbose = extensionsDirOrOpts.verbose ?? verbose;
+    allOptions = extensionsDirOrOpts.verbose ?? allOptions;
     app = extensionsDirOrOpts.app;
     registry = extensionsDirOrOpts.registry;
     executor = extensionsDirOrOpts.executor;
@@ -353,7 +359,7 @@ export function createCli(
     extensionsDir = extensionsDirOrOpts;
   }
 
-  verboseHelp = verbose;
+  verboseHelp = allOptions;
   // Register Config Bus namespace (apcore >= 0.15.0)
   registerConfigNamespace();
 
@@ -884,8 +890,16 @@ export function buildModuleCommand(
   if (inputSchema && typeof inputSchema === "object" && inputSchema.properties) {
     try {
       resolvedSchema = resolveRefs(inputSchema, 32, moduleId);
-    } catch {
-      resolvedSchema = inputSchema;
+    } catch (err) {
+      if (err instanceof MaxDepthExceededError || err instanceof CircularRefError) {
+        process.stderr.write(`Error: ${(err as Error).message}\n`);
+        process.exit(EXIT_CODES.SCHEMA_CIRCULAR_REF);
+      }
+      if (err instanceof UnresolvableRefError) {
+        process.stderr.write(`Error: ${(err as Error).message}\n`);
+        process.exit(EXIT_CODES.SCHEMA_VALIDATION_ERROR);
+      }
+      resolvedSchema = inputSchema; // unexpected error: fall through to raw schema
     }
     schemaOptions = schemaToCliOptions(resolvedSchema, helpTextMaxLength);
   }

@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { resolveRefs } from "../src/ref-resolver.js";
+import { CircularRefError, MaxDepthExceededError, UnresolvableRefError } from "../src/errors.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -104,12 +105,7 @@ describe("resolveRefs", () => {
     expect((innerProps.properties as Record<string, Record<string, unknown>>).value.type).toBe("string");
   });
 
-  it("exits 48 on circular $ref", () => {
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("exit");
-    });
-    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-
+  it("throws CircularRefError on circular $ref", () => {
     const schema = {
       type: "object",
       properties: {
@@ -125,16 +121,10 @@ describe("resolveRefs", () => {
       },
     };
 
-    expect(() => resolveRefs(schema)).toThrow("exit");
-    expect(exitSpy).toHaveBeenCalledWith(48);
+    expect(() => resolveRefs(schema)).toThrow(CircularRefError);
   });
 
-  it("exits 48 when depth exceeds maxDepth", () => {
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("exit");
-    });
-    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-
+  it("throws MaxDepthExceededError when depth exceeds maxDepth", () => {
     const schema = {
       type: "object",
       properties: {
@@ -153,16 +143,25 @@ describe("resolveRefs", () => {
       },
     };
 
-    expect(() => resolveRefs(schema, 2, "test")).toThrow("exit");
-    expect(exitSpy).toHaveBeenCalledWith(48);
+    expect(() => resolveRefs(schema, 2, "test")).toThrow(MaxDepthExceededError);
   });
 
-  it("exits 45 on unresolvable $ref", () => {
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("exit");
-    });
-    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  it("MaxDepthExceededError is distinct from CircularRefError", () => {
+    const circularSchema = {
+      properties: { x: { $ref: "#/$defs/X" } },
+      $defs: { X: { properties: { x: { $ref: "#/$defs/X" } } } },
+    };
+    const deepSchema = {
+      properties: { a: { $ref: "#/$defs/A" } },
+      $defs: { A: { properties: { b: { $ref: "#/$defs/B" } } }, B: { type: "string" } },
+    };
+    expect(() => resolveRefs(circularSchema)).toThrow(CircularRefError);
+    expect(() => resolveRefs(circularSchema)).not.toThrow(MaxDepthExceededError);
+    expect(() => resolveRefs(deepSchema, 1, "mod")).toThrow(MaxDepthExceededError);
+    expect(() => resolveRefs(deepSchema, 1, "mod")).not.toThrow(CircularRefError);
+  });
 
+  it("throws UnresolvableRefError on missing $ref target", () => {
     const schema = {
       type: "object",
       properties: {
@@ -171,8 +170,33 @@ describe("resolveRefs", () => {
       $defs: {},
     };
 
-    expect(() => resolveRefs(schema)).toThrow("exit");
-    expect(exitSpy).toHaveBeenCalledWith(45);
+    expect(() => resolveRefs(schema)).toThrow(UnresolvableRefError);
+  });
+
+  it("resolves $refs inside non-properties keywords (items, additionalProperties)", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        tags: {
+          type: "array",
+          items: { $ref: "#/$defs/Tag" },
+        },
+        extra: { $ref: "#/$defs/Tag" },
+      },
+      additionalProperties: { $ref: "#/$defs/Tag" },
+      $defs: {
+        Tag: { type: "string", description: "a tag" },
+      },
+    };
+    const result = resolveRefs(schema);
+    // $ref inside items should be resolved
+    expect((result.properties as Record<string, unknown>)?.tags).toEqual({
+      type: "array",
+      items: { type: "string", description: "a tag" },
+    });
+    // $ref inside additionalProperties should be resolved
+    expect(result.additionalProperties).toEqual({ type: "string", description: "a tag" });
+    expect(result.$defs).toBeUndefined();
   });
 
   // Composition tests
