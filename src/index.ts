@@ -87,7 +87,13 @@ export {
 } from "./errors.js";
 export type { ExitCode } from "./errors.js";
 
-// Logger — control functions only (per-level helpers are internal to logger module)
+// Logger — control functions only (per-level helpers are internal to logger module).
+//
+// D1-W4 (2026-05-12): setLogLevel / getLogLevel are intentionally TS-only. The
+// other two SDKs delegate log-level control to the host language's idiomatic
+// channel: Python uses `logging.getLogger("apcore_cli").setLevel(...)`; Rust
+// uses the `tracing` crate's env-filter (`RUST_LOG=apcore_cli=debug`). There
+// is no plan to add equivalent functions in those SDKs.
 export { setLogLevel, getLogLevel } from "./logger.js";
 
 // Security

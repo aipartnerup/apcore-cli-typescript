@@ -342,7 +342,11 @@ export function registerExecCommand(
         }
 
         let result: unknown;
-        if (opts.strategy && executor.callWithTrace) {
+        // D11-011: --trace alone (no --strategy) must also route through
+        // callWithTrace, matching Python discovery.py:382. Previously the
+        // short-circuit only checked opts.strategy, leaving --trace silently
+        // dropped on the TS side.
+        if ((opts.trace || opts.strategy) && executor.callWithTrace) {
           const [res] = await executor.callWithTrace(moduleId, merged, { strategy: opts.strategy });
           result = res;
         } else {

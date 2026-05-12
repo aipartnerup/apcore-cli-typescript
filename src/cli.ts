@@ -15,14 +15,22 @@ import { warn } from "./logger.js";
 import { getReservedGroupNames } from "./builtin-group.js";
 import { EXIT_CODES } from "./errors.js";
 
-// TODO: Import Registry and Executor from apcore-js once available
-// import type { Registry, Executor, ModuleDescriptor } from "apcore-js";
+// D9-W2 (2026-05-12): apcore-js is already a real peer dep (see init-cmd.ts:31,
+// config.ts:92), but the published Registry / ModuleDescriptor shapes diverge
+// from what this CLI consumes — apcore-js uses `list()` / `getDefinition()`
+// and `moduleId` field, while we depend on `listModules()` / `getModule()`
+// and `id`. CLAUDE.md v0.9.0 "Known gap" documents this. The interfaces below
+// remain local until the apcore-js Registry surface aligns (or this CLI is
+// rewritten to adapt to apcore-js's actual shape). The Executor placeholder
+// was aligned with upstream camelCase in the 0.19.0 upgrade — only the
+// Registry / ModuleDescriptor side stays divergent.
 
 // ---------------------------------------------------------------------------
-// Placeholder types until apcore-js types are available
+// CLI-internal type shims (paired with apcore-js shape divergence — see above).
+// Embedders must wrap their real apcore-js Registry to satisfy this interface.
 // ---------------------------------------------------------------------------
 
-/** Placeholder for apcore-js Registry. */
+/** CLI-internal Registry shim (see D9-W2 note above). */
 export interface Registry {
   listModules(): ModuleDescriptor[];
   getModule(moduleId: string): ModuleDescriptor | null;

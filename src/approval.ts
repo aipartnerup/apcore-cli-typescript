@@ -63,6 +63,19 @@ export class CliApprovalHandler {
   async requestApproval(request: Record<string, unknown>): Promise<Record<string, unknown>> {
     const moduleId = (request.module_id as string) ?? "unknown";
 
+    // D11-014 (2026-05-12): defense-in-depth — short-circuit when the request
+    // explicitly declares it does not require approval. Matches Rust
+    // approval.rs:421 (`if !get_requires_approval(module_def) { return Approved::not_required }`)
+    // and Python approval.py request_approval.
+    if (request.requires_approval === false) {
+      return { status: "approved", approved_by: "not_required" };
+    }
+    const moduleDef = request.module_def as { annotations?: Record<string, unknown> } | undefined;
+    const annotationsForCheck = moduleDef?.annotations;
+    if (annotationsForCheck && (annotationsForCheck as Record<string, unknown>).requires_approval === false) {
+      return { status: "approved", approved_by: "not_required" };
+    }
+
     if (this.autoApprove) {
       return { status: "approved", approved_by: "auto_approve" };
     }

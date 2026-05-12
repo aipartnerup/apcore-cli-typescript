@@ -244,6 +244,12 @@ export interface APCore {
 export interface CreateCliOptions {
   extensionsDir?: string;
   progName?: string;
+  /**
+   * Show all options in help output (controls `--all-options` behaviour;
+   * parameter was named `verbose` prior to v0.9.0).
+   */
+  allOptions?: boolean;
+  /** @deprecated Use {@link allOptions} instead. Kept for backward compatibility with pre-v0.9.0 callers. */
   verbose?: boolean;
   /**
    * APCore unified client instance (apcore-js >= 0.18.0).
@@ -344,7 +350,10 @@ export function createCli(
   if (typeof extensionsDirOrOpts === "object" && extensionsDirOrOpts !== null) {
     extensionsDir = extensionsDirOrOpts.extensionsDir;
     progName = extensionsDirOrOpts.progName ?? progName;
-    allOptions = extensionsDirOrOpts.verbose ?? allOptions;
+    // D1-W5: prefer the canonical `allOptions`; fall back to legacy `verbose`
+    // for one MINOR cycle (slated for removal in v0.10). Matches the
+    // setAllOptionsHelp/setVerboseHelp deprecation pair.
+    allOptions = extensionsDirOrOpts.allOptions ?? extensionsDirOrOpts.verbose ?? allOptions;
     app = extensionsDirOrOpts.app;
     registry = extensionsDirOrOpts.registry;
     executor = extensionsDirOrOpts.executor;
