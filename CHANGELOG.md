@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.0] - 2026-05-12
 
+### Fixed (2026-05-13 — cross-SDK audit D10/D11/D1)
+
+- **`ConfigEncryptor` LOGNAME key-derivation chain** (D10-001) — PBKDF2 username fallback was `USER → USERNAME → "unknown"` (3-tier); now `USER → LOGNAME → USERNAME → "unknown"` (4-tier) matching the spec and Rust. `src/security/config-encryptor.ts:183, 219`.
+- **Sandbox stdin write lacks `'error'` listener** (D11-008) — `child.stdin.on('error', () => {})` added before `write()` so an EPIPE event from a child that exits early no longer surfaces as an uncaught exception. `src/security/sandbox.ts:153`.
+- **`buildSandboxEnv` drops explicitly-empty env values** (D11-009) — `if (process.env[key])` changed to `if (process.env[key] !== undefined)` so `PATH=""` is forwarded uniformly with Python and Rust. `src/security/sandbox.ts:264`.
+- **`exec --trace` flag ignored when used without `--strategy`** (D11-011) — condition `if (opts.strategy && executor.callWithTrace)` changed to `if ((opts.trace || opts.strategy) && executor.callWithTrace)`. `--trace` alone now routes through `callWithTrace` matching Python. `src/discovery.ts:345`.
+- **CLI brand string in auth error messages** (D11-006) — remediation strings now say `apcli config set auth.api_key` (canonical FE-13 name). `src/security/auth.ts:46`.
+- **`requestApproval` missing `requires_approval=false` short-circuit** (D11-014) — returns `approved/not_required` when the request explicitly carries `requires_approval: false`, matching Rust. `src/approval.ts:63`.
+- **`AuthProvider` missing `config.encryptor` peer-attribute fallback** (D11-005) — `getEncryptor()` now walks explicit constructor arg → `config.encryptor` peer attribute → fresh instance, matching Python's three-tier chain. `src/security/auth.ts:22`.
+- **`APCLI_SUBCOMMAND_NAMES` and `DEFAULT_BUILTIN_GROUP_NAME` not re-exported** (D1 re-audit) — both constants added to `src/index.ts:27` export block. Python and Rust already re-exported both.
+- **Standalone bin entrypoint used deprecated `verbose:` field internally** (D9 re-audit) — `src/main.ts:848` `createCli` call now passes canonical `allOptions: verboseHelp`.
+- **Stale `cli.ts` placeholder-type TODO** (D9-W2) — TODO comment updated to document the actual `apcore-js` Registry/ModuleDescriptor shape gap (method names diverge: `listModules`/`getModule` vs `list`/`getDefinition`/`moduleId`), replacing the generic "until available" wording.
+
+### Added
+
+- **`CreateCliOptions.allOptions` field** (D1-W5) — canonical successor to the deprecated `verbose` field. Embedders should migrate `createCli({ verbose: true })` → `createCli({ allOptions: true })`. `verbose` remains for backward compat through v0.9 and will be removed in v0.10. `src/main.ts:251`.
+- **`setLogLevel` / `getLogLevel` documented as intentionally TS-only** (D1-W4) — `src/index.ts:96-102` now carries a cross-SDK parity note explaining that Python and Rust delegate to their native logging channels.
+- **`getAuditLogger` documented as intentionally TS-only** (D1 re-audit) — `src/index.ts:106` now carries a note. Only the setter (`setAuditLogger`) is the canonical cross-SDK API.
+
 ### Fixed
 
 - **CSV `--format csv` heterogeneous-keys data loss** — `formatExecResult` previously derived CSV headers from `Object.keys(rows[0])` only, silently dropping fields that first appeared in later rows. Surfaced via aisee-cli's `summarizeAction()` which emits optional `description` / `solution` fields. The header is now the **union of keys across all rows** in insertion-order. `src/output.ts:340-357`.
