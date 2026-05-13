@@ -5,7 +5,7 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0] - 2026-05-12
+## [0.9.0] - 2026-05-13
 
 ### Fixed (2026-05-13 — cross-SDK audit D10/D11/D1)
 
