@@ -845,7 +845,7 @@ export function main(progName?: string): void {
   // gated on opts.version for embedded callers — see issue #18).
   const program = createCli({
     progName,
-    verbose: verboseHelp,
+    allOptions: verboseHelp,
     version: VERSION,
     description: `${progName ?? "apcore-cli"} — execute modules from the command line`,
   });

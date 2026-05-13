@@ -24,7 +24,13 @@ export { LazyModuleGroup, GroupedModuleGroup, LazyGroup } from "./cli.js";
 export type { Registry, Executor, ModuleDescriptor, PreflightResult, PreflightCheck, PipelineTrace, PipelineTraceStep, StrategyInfo, StrategyStep } from "./cli.js";
 
 // Built-in apcli group (FE-13)
-export { ApcliGroup, ApcliGroupError, RESERVED_GROUP_NAMES } from "./builtin-group.js";
+export {
+  ApcliGroup,
+  ApcliGroupError,
+  RESERVED_GROUP_NAMES,
+  APCLI_SUBCOMMAND_NAMES,
+  DEFAULT_BUILTIN_GROUP_NAME,
+} from "./builtin-group.js";
 export type { ApcliConfig, ApcliMode } from "./builtin-group.js";
 
 // Approval handler (FE-11)
@@ -96,5 +102,12 @@ export type { ExitCode } from "./errors.js";
 // is no plan to add equivalent functions in those SDKs.
 export { setLogLevel, getLogLevel } from "./logger.js";
 
-// Security
+// Security.
+//
+// D1 follow-up note (2026-05-13): `getAuditLogger` is currently TS-only —
+// Python (apcore_cli/cli.py) and Rust (apcore-cli-rust/src/cli.rs) keep the
+// active AuditLogger as a module-private static with only a setter exposed.
+// TS exports the getter because internal modules (discovery, main) re-read it
+// during async execution. Embedders writing cross-SDK glue should not rely on
+// the getter — `setAuditLogger` is the canonical cross-SDK API.
 export { AuditLogger, setAuditLogger, getAuditLogger, AuthProvider, ConfigEncryptor, Sandbox } from "./security/index.js";
