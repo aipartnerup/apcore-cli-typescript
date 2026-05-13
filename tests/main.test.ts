@@ -396,6 +396,118 @@ describe("buildModuleCommand()", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Pre-execute schema validation (parity with Python/Rust)
+// ---------------------------------------------------------------------------
+
+describe("buildModuleCommand() — pre-execute schema validation", () => {
+  it("exits 45 with friendly message when a required field is missing", async () => {
+    const schema = {
+      type: "object",
+      properties: { url: { type: "string" } },
+      required: ["url"],
+    };
+    const executor = makeExecutor();
+    const cmd = buildModuleCommand(makeMod("fetch.data", "Fetch", schema), executor);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("__exit__");
+    }) as never);
+
+    await expect(cmd.parseAsync([], { from: "user" })).rejects.toThrow("__exit__");
+
+    expect(exitSpy).toHaveBeenCalledWith(45);
+    const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(stderrText).toContain("'url'");
+    expect(stderrText).toContain("required");
+    expect(executor.execute).not.toHaveBeenCalled();
+  });
+
+  it("proceeds to execute when all required fields are provided", async () => {
+    const schema = {
+      type: "object",
+      properties: { url: { type: "string" } },
+      required: ["url"],
+    };
+    const executor = makeExecutor({ result: "ok" });
+    const cmd = buildModuleCommand(makeMod("fetch.data", "Fetch", schema), executor);
+
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await cmd.parseAsync(["--url", "https://example.com"], { from: "user" });
+    expect(executor.execute).toHaveBeenCalledWith("fetch.data", { url: "https://example.com" });
+  });
+
+  it("skips validation when schema has no properties", async () => {
+    const schema = { type: "object" };
+    const executor = makeExecutor({ ok: true });
+    const cmd = buildModuleCommand(makeMod("no.schema", "No schema", schema), executor);
+
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await cmd.parseAsync([], { from: "user" });
+    expect(executor.execute).toHaveBeenCalled();
+  });
+
+  it("exits 45 when required field is missing (integer schema)", async () => {
+    const schema = {
+      type: "object",
+      properties: { count: { type: "integer" } },
+      required: ["count"],
+    };
+    const executor = makeExecutor();
+    const cmd = buildModuleCommand(makeMod("data.count", "Count", schema), executor);
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("__exit__");
+    }) as never);
+
+    await expect(cmd.parseAsync([], { from: "user" })).rejects.toThrow("__exit__");
+    expect(exitSpy).toHaveBeenCalledWith(45);
+    const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(stderrText).toContain("'count'");
+    expect(stderrText).toContain("required");
+    expect(executor.execute).not.toHaveBeenCalled();
+  });
+
+  it("exits 45 with type-mismatch message when integer field receives string via --input", async () => {
+    const schema = {
+      type: "object",
+      properties: { count: { type: "integer" } },
+      // no required — exercises type check only, not required check
+    };
+    const executor = makeExecutor();
+    const cmd = buildModuleCommand(makeMod("data.count", "Count", schema), executor);
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "apcore-schema-test-"));
+    try {
+      const inputFile = path.join(tmpDir, "input.json");
+      fs.writeFileSync(inputFile, JSON.stringify({ count: "not-a-number" }));
+
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("__exit__");
+      }) as never);
+
+      await expect(
+        cmd.parseAsync(["--input", inputFile], { from: "user" }),
+      ).rejects.toThrow("__exit__");
+
+      expect(exitSpy).toHaveBeenCalledWith(45);
+      const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+      expect(stderrText).toContain("'count'");
+      expect(stderrText).toContain("must be a number");
+      expect(executor.execute).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // SIGINT handling concept (basic test)
 // ---------------------------------------------------------------------------
 

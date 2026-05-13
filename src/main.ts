@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
 import { Command, CommanderError, Option } from "commander";
-import { EXIT_CODES, exitCodeForError, MaxDepthExceededError, CircularRefError, UnresolvableRefError } from "./errors.js";
+import { EXIT_CODES, exitCodeForError, MaxDepthExceededError, CircularRefError, UnresolvableRefError, SchemaValidationError } from "./errors.js";
 import { resolveRefs } from "./ref-resolver.js";
 import { schemaToCliOptions } from "./schema-parser.js";
 import { checkApproval } from "./approval.js";
@@ -161,6 +161,52 @@ export interface OptionConfig {
   enumOriginalTypes?: Record<string, string>;
   /** Parser function for Commander (e.g. parseInt, parseFloat). */
   parseArg?: (value: string) => unknown;
+}
+
+// ---------------------------------------------------------------------------
+// Pre-execute input validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate input against a JSON Schema's required fields and basic types.
+ * Returns the first error message, or null on success.
+ *
+ * Mirrors Python `jsonschema.validate` and Rust `validate_against_schema` so
+ * missing required fields produce exit 45 instead of a TypeError inside execute.
+ */
+function validateInputSchema(
+  schema: Record<string, unknown>,
+  input: Record<string, unknown>,
+): string | null {
+  const required = schema.required as string[] | undefined;
+  if (required && Array.isArray(required)) {
+    for (const field of required) {
+      const val = input[field];
+      if (val === null || val === undefined) {
+        return `'${field}' is required`;
+      }
+    }
+  }
+  const properties = schema.properties as Record<string, Record<string, unknown>> | undefined;
+  if (properties) {
+    for (const [field, propSchema] of Object.entries(properties)) {
+      const val = input[field];
+      if (val === null || val === undefined) continue;
+      const expectedType = propSchema.type as string | undefined;
+      if (!expectedType) continue;
+      const actualType = typeof val;
+      if (expectedType === "string" && actualType !== "string") {
+        return `'${field}' must be a string, got ${actualType}`;
+      }
+      if ((expectedType === "integer" || expectedType === "number") && actualType !== "number") {
+        return `'${field}' must be a number, got ${actualType}`;
+      }
+      if (expectedType === "boolean" && actualType !== "boolean") {
+        return `'${field}' must be a boolean, got ${actualType}`;
+      }
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,15 +1121,25 @@ export function buildModuleCommand(
         process.exit(preflight.valid ? 0 : firstFailedExitCode(preflight));
       }
 
+      // 3. Pre-execute schema validation (parity with Python jsonschema.validate
+      // and Rust validate_against_schema). Catches missing required fields before
+      // they reach executor.execute() and produce an opaque TypeError.
+      if (resolvedSchema.properties) {
+        const validationErr = validateInputSchema(resolvedSchema, merged);
+        if (validationErr) {
+          throw new SchemaValidationError(`Validation failed: ${validationErr}`);
+        }
+      }
+
       // -- Inject approval token if provided (F5) --
       if (approvalToken) {
         merged._approval_token = approvalToken;
       }
 
-      // 3. Check approval
+      // 4. Check approval
       await checkApproval(moduleDef, autoApprove, approvalTimeout);
 
-      // 4. Execute with timing
+      // 5. Execute with timing
 
       // -- Streaming execution (F6) --
       if (streamFlag) {
@@ -1203,10 +1259,10 @@ export function buildModuleCommand(
       }
       const durationMs = Math.round(performance.now() - startTime);
 
-      // 5. Format and print result first (canonical order: format → audit)
+      // 6. Format and print result first (canonical order: format → audit)
       formatExecResult(result, outputFormat, outputFields);
 
-      // 6. Audit log (success) — called AFTER format so formatter exceptions
+      // 7. Audit log (success) — called AFTER format so formatter exceptions
       //    suppress the success entry (matches Python canonical ordering).
       const { getAuditLogger } = await import("./security/audit.js");
       const auditLogger = getAuditLogger();

@@ -50,6 +50,7 @@ export class ApprovalDeniedError extends Error {
 
 /** Thrown when schema validation fails. */
 export class SchemaValidationError extends Error {
+  readonly code = "SCHEMA_VALIDATION_ERROR";
   constructor(message = "Schema validation failed") {
     super(message);
     this.name = "SchemaValidationError";
