@@ -5,6 +5,24 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-05-13
+
+### Fixed
+
+- **Pre-execute schema validation missing in `buildModuleCommand`** — before calling `executor.execute()`, the CLI now validates the merged input against the module's JSON Schema (required fields + scalar types). Previously, a missing required field (e.g. `--url` not supplied) propagated as `undefined` into the executor and produced an opaque `TypeError`. Now exits 45 with a human-readable message (`Validation failed: 'url' is required`) matching Python's `jsonschema.validate` and Rust's `validate_against_schema` pre-execute behaviour. Validation is skipped in `--dry-run` mode (executor preflight handles that path). `src/main.ts:177-208` (`validateInputSchema`), call site `src/main.ts:1127-1133`.
+- **`SchemaValidationError` emitted `"code":"UNKNOWN"` in JSON error output** — `emitErrorJson` reads `err.code` to populate the `"code"` field; `SchemaValidationError` had no `.code` property, so exit-45 validation errors always emitted `"code":"UNKNOWN"`. Added `readonly code = "SCHEMA_VALIDATION_ERROR"` to the class. `src/errors.ts:52`.
+
+### Changed
+
+- **Step comment numbering in `buildModuleCommand` action handler corrected** — inserting the schema-validation step left two "3." labels in the try block. Renumbered: 3 = schema validation, 4 = check approval, 5 = execute, 6 = format, 7 = audit. `src/main.ts`.
+
+### Tests
+
+- Renamed test 4 in the pre-execute schema-validation suite from `"exits 45 with type error message when field has wrong type"` (which actually tested the required-field path) to `"exits 45 when required field is missing (integer schema)"`.
+- Added test 5: `"exits 45 with type-mismatch message when integer field receives string via --input"` — supplies `{"count":"not-a-number"}` via `--input <file>` to exercise the scalar type-check branch (`validateInputSchema` lines 198-206) that had zero coverage.
+
+---
+
 ## [0.9.0] - 2026-05-13
 
 ### Fixed (2026-05-13 — cross-SDK audit D10/D11/D1)
