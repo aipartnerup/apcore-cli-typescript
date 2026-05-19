@@ -5,6 +5,30 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-05-18
+
+### Changed — BREAKING
+
+- **Removed graceful dynamic-import fallback for `apcore-toolkit` in `applyToolkitIntegration` (resolves 6.2).** `package.json` already declares `apcore-toolkit>=0.7.0` as a required peer dependency, but `main.ts:792-801` used a `try { await import("apcore-toolkit") } catch { logWarn(...); return }` pattern — self-contradiction between manifest and runtime behaviour. The fallback is gone; `BindingLoader` and `DisplayResolver` are now statically imported at the top of `main.ts`. A missing toolkit installation now fails at module load time with `ERR_MODULE_NOT_FOUND`, matching the peer-dep contract. `loadBindingDisplayOverlay` no longer takes a `toolkit: Record<string, unknown>` parameter (signature simplified).
+- **CLI-internal `Registry`, `Executor`, and `ModuleDescriptor` interfaces now match apcore-js >= 0.22.0 exactly (resolves "D9-W2 Known gap" in `src/cli.ts`).** Embedders may now pass an `apcore-js` `Registry` / `Executor` instance — and the `ModuleDescriptor` objects those instances return — directly to `createCli()` with no adapter or field remapping. Four surfaces aligned:
+  - **`Executor.execute(moduleId, input)` → `Executor.call(moduleId, input)`**. `execute` is removed entirely; `call` is the single required invocation method.
+  - **`Registry.listModules() → ModuleDescriptor[]` → `Registry.list() → string[]`**. `list()` returns module IDs only (matches apcore-js semantics). A new exported helper `listAllDefinitions(registry: Registry): ModuleDescriptor[]` performs the `list() + getDefinition()` iteration for call sites that need full descriptors.
+  - **`Registry.getModule(moduleId)` → `Registry.getDefinition(moduleId)`** (rename only — semantics identical).
+  - **`ModuleDescriptor.id: string` → `ModuleDescriptor.moduleId: string`**; **`ModuleDescriptor.name: string` → `ModuleDescriptor.name: string | null`** (matches apcore-js `name` nullability). All internal accesses (`approval`, `display-helpers`, `discovery`, `main`, `output`) updated. The generic `sortModulesByUsage<T>` helper in `system-usage.ts` accepts any of `{ moduleId, id, module_id }` for forward/backward compatibility with snake_case audit payloads.
+- **CLI JSON output preserves the `id` field name** for backward compatibility with downstream scripts (jq pipelines, log parsers). The output boundary in `output.ts` maps `descriptor.moduleId` → JSON `id` explicitly; emitted JSON shape is unchanged from 0.9.x.
+- **Migration for embedders** who provided custom Registry / Executor / ModuleDescriptor shims to `createCli()`:
+  ```ts
+  // Before (0.9.x):
+  const registry = { listModules: () => mods, getModule: (id) => mods.find(m => m.id === id) ?? null };
+  const executor = { execute: (id, input) => myInvoke(id, input) };
+  const mod = { id: "math.add", name: "math.add", description: "Add" };
+  // After (0.10.0):
+  const registry = { list: () => mods.map(m => m.moduleId), getDefinition: (id) => mods.find(m => m.moduleId === id) ?? null };
+  const executor = { call: (id, input) => myInvoke(id, input) };
+  const mod = { moduleId: "math.add", name: "math.add", description: "Add" };
+  ```
+  Embedders using apcore-js's own `Registry` / `Executor` (the common case via `APCore` client) need no code change — those instances and their descriptors already satisfy the new shim shape verbatim.
+
 ## [0.9.1] - 2026-05-13
 
 ### Fixed

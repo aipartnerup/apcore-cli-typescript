@@ -87,7 +87,7 @@ export class Sandbox {
     executor: Executor,
   ): Promise<unknown> {
     if (!this.enabled) {
-      return executor.execute(moduleId, inputData);
+      return executor.call(moduleId, inputData);
     }
     return this._sandboxedExecute(moduleId, inputData);
   }

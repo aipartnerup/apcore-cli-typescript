@@ -14,22 +14,22 @@ import type { Executor, ModuleDescriptor, Registry } from "../src/cli.js";
 
 function makeRegistry(modules: ModuleDescriptor[]): Registry {
   return {
-    listModules: () => modules,
-    getModule: (id: string) => modules.find((m) => m.id === id) ?? null,
+    list: () => modules.map((m: ModuleDescriptor) => m.moduleId),
+    getDefinition: (id: string) => modules.find((m) => m.moduleId === id) ?? null,
   };
 }
 
 function makeMod(
-  id: string,
+  moduleId: string,
   desc: string,
   tags: string[] = [],
 ): ModuleDescriptor {
-  return { id, name: id, description: desc, tags };
+  return { moduleId, name: moduleId, description: desc, tags };
 }
 
 function makeExecutor(overrides: Partial<Executor> = {}): Executor {
   return {
-    execute: vi.fn(async () => ({ ok: true })),
+    call: vi.fn(async () => ({ ok: true })),
     ...overrides,
   } as Executor;
 }
@@ -181,11 +181,11 @@ describe("registerExecCommand()", () => {
     expect(rootNames).not.toContain("exec");
   });
 
-  it("calls executor.execute with the passed module id", async () => {
+  it("calls executor.call with the passed module id", async () => {
     const apcliGroup = new Command("apcli");
     const mods = [makeMod("my.mod", "My module")];
     const execFn = vi.fn(async () => ({ result: 42 }));
-    const executor = makeExecutor({ execute: execFn });
+    const executor = makeExecutor({ call: execFn });
     registerExecCommand(apcliGroup, makeRegistry(mods), executor);
 
     await apcliGroup.parseAsync(["exec", "my.mod", "--format", "json"], { from: "user" });
@@ -198,7 +198,7 @@ describe("registerExecCommand()", () => {
     const apcliGroup = new Command("apcli");
     const mods = [makeMod("my.mod", "My module")];
     const execFn = vi.fn(async () => ({ result: 42 }));
-    const executor = makeExecutor({ execute: execFn });
+    const executor = makeExecutor({ call: execFn });
     registerExecCommand(apcliGroup, makeRegistry(mods), executor);
 
     await apcliGroup.parseAsync(["exec", "my.mod", "--format", "json"], { from: "user" });
@@ -211,7 +211,7 @@ describe("registerExecCommand()", () => {
     const apcliGroup = new Command("apcli");
     const mods = [makeMod("my.mod", "My module")];
     const execFn = vi.fn(async () => ({ ok: true }));
-    const executor = makeExecutor({ execute: execFn });
+    const executor = makeExecutor({ call: execFn });
     registerExecCommand(apcliGroup, makeRegistry(mods), executor);
 
     await apcliGroup.parseAsync(
@@ -238,19 +238,19 @@ describe("registerExecCommand()", () => {
 
   // Review fix #1: apcli exec must gate on checkApproval for modules
   // annotated requires_approval:true, matching buildModuleCommand's dispatch
-  // policy. Previously exec called executor.execute directly — any module
+  // policy. Previously exec called executor.call directly — any module
   // with requires_approval:true invoked via apcli exec executed without an
   // approval prompt and without an audit log entry.
   it("gates on checkApproval when the module requires approval (non-TTY denies)", async () => {
     const apcliGroup = new Command("apcli");
     const mod: ModuleDescriptor = {
-      id: "sensitive.op",
+      moduleId: "sensitive.op",
       name: "sensitive.op",
       description: "Requires approval",
       annotations: { requires_approval: true },
     };
     const execFn = vi.fn(async () => ({ ok: true }));
-    const executor = makeExecutor({ execute: execFn });
+    const executor = makeExecutor({ call: execFn });
     registerExecCommand(apcliGroup, makeRegistry([mod]), executor);
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("exit");
@@ -268,16 +268,16 @@ describe("registerExecCommand()", () => {
     }
   });
 
-  it("--yes bypasses approval and calls executor.execute", async () => {
+  it("--yes bypasses approval and calls executor.call", async () => {
     const apcliGroup = new Command("apcli");
     const mod: ModuleDescriptor = {
-      id: "sensitive.op",
+      moduleId: "sensitive.op",
       name: "sensitive.op",
       description: "Requires approval",
       annotations: { requires_approval: true },
     };
     const execFn = vi.fn(async () => ({ ok: true }));
-    const executor = makeExecutor({ execute: execFn });
+    const executor = makeExecutor({ call: execFn });
     registerExecCommand(apcliGroup, makeRegistry([mod]), executor);
     await apcliGroup.parseAsync(["exec", "sensitive.op", "--yes", "--format", "json"], {
       from: "user",
@@ -293,7 +293,7 @@ describe("registerExecCommand()", () => {
       const apcliGroup = new Command("apcli");
       const mod = makeMod("my.mod", "My module");
       const execFn = vi.fn(async () => ({ result: 42 }));
-      const executor = makeExecutor({ execute: execFn });
+      const executor = makeExecutor({ call: execFn });
       registerExecCommand(apcliGroup, makeRegistry([mod]), executor);
       await apcliGroup.parseAsync(["exec", "my.mod", "--format", "json"], { from: "user" });
       expect(logExecution).toHaveBeenCalledTimes(1);
@@ -317,7 +317,7 @@ describe("registerExecCommand()", () => {
       const execFn = vi.fn(async () => {
         throw Object.assign(new Error("boom"), { code: "MODULE_EXECUTE_ERROR" });
       });
-      const executor = makeExecutor({ execute: execFn });
+      const executor = makeExecutor({ call: execFn });
       registerExecCommand(apcliGroup, makeRegistry([mod]), executor);
       await expect(
         apcliGroup.parseAsync(["exec", "my.mod", "--format", "json"], { from: "user" }),
@@ -410,13 +410,13 @@ describe("registerListCommand() --annotation paginated (apcore 0.19.0)", () => {
   it("filters modules by the 'paginated' annotation (added in apcore 0.19.0)", () => {
     const apcliGroup = new Command("apcli");
     const paged: ModuleDescriptor = {
-      id: "reports.list",
+      moduleId: "reports.list",
       name: "reports.list",
       description: "Paged report list",
       annotations: { paginated: true },
     };
     const unpaged: ModuleDescriptor = {
-      id: "reports.count",
+      moduleId: "reports.count",
       name: "reports.count",
       description: "Scalar report count",
       annotations: { paginated: false },

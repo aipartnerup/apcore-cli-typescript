@@ -70,7 +70,7 @@ describe("formatModuleList()", () => {
   });
 
   const makeMod = (id: string, desc: string, tags: string[] = []): ModuleDescriptor => ({
-    id,
+    moduleId: id,
     name: id,
     description: desc,
     tags,
@@ -131,7 +131,7 @@ describe("formatModuleDetail()", () => {
   });
 
   const baseMod: ModuleDescriptor = {
-    id: "test.mod",
+    moduleId: "test.mod",
     name: "test.mod",
     description: "A test module",
     tags: ["test"],
@@ -183,7 +183,7 @@ describe("formatModuleDetail()", () => {
 
   it("omits empty sections", () => {
     const mod: ModuleDescriptor = {
-      id: "minimal",
+      moduleId: "minimal",
       name: "minimal",
       description: "Minimal",
     };

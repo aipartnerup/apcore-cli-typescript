@@ -101,7 +101,7 @@ export class CliApprovalHandler {
 
     process.stderr.write(message + "\n");
     try {
-      await promptWithTimeout({ id: moduleId } as ModuleDescriptor, this.timeout);
+      await promptWithTimeout({ moduleId } as unknown as ModuleDescriptor, this.timeout);
       return { status: "approved", approved_by: "tty_user" };
     } catch {
       return { status: "rejected", reason: "User rejected or timed out" };
@@ -145,7 +145,7 @@ export async function checkApproval(
     return;
   }
 
-  const moduleId = moduleDef.id;
+  const moduleId = moduleDef.moduleId;
 
   // Bypass: autoApprove flag (highest priority)
   if (autoApprove) {
@@ -186,7 +186,7 @@ async function promptWithTimeout(
   // Clamp timeout
   timeout = Math.max(1, Math.min(timeout, 3600));
 
-  const moduleId = moduleDef.id;
+  const moduleId = moduleDef.moduleId;
   const annotations = moduleDef.annotations;
   const message =
     (annotations

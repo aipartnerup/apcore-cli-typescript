@@ -23,7 +23,7 @@ export function getDisplay(descriptor: ModuleDescriptor): Record<string, unknown
   if (display && typeof display === "object" && !Array.isArray(display)) {
     return display as Record<string, unknown>;
   }
-  const overlay = lookupBindingDisplay(descriptor.id);
+  const overlay = lookupBindingDisplay(descriptor.moduleId);
   return overlay ?? {};
 }
 
@@ -39,7 +39,7 @@ export function getCliDisplayFields(descriptor: ModuleDescriptor): [string, stri
     : {};
   const name = (cli.alias as string | undefined)
     ?? (display.alias as string | undefined)
-    ?? descriptor.id;
+    ?? descriptor.moduleId;
   const desc = (cli.description as string | undefined) ?? descriptor.description;
   const tags = (display.tags as string[] | undefined) ?? descriptor.tags ?? [];
   return [name, desc, tags];

@@ -1,6 +1,6 @@
 /**
  * Conformance — Algorithm C-SNAKE: snake_case multi-word kwargs flow from
- * CLI parsing to the input dict that `Executor.execute(module_id, input)`
+ * CLI parsing to the input dict that `Executor.call(module_id, input)`
  * receives. Fixture lives in the spec repo at
  *   ../apcore-cli/conformance/fixtures/snake-case-kwargs/cases.json
  * and is shared verbatim with the Python and Rust SDK runners.
@@ -56,7 +56,7 @@ describe("conformance — snake_case kwargs (Algorithm C-SNAKE)", () => {
       };
       const captured: { input?: Record<string, unknown> } = {};
       const executor: Executor = {
-        execute: vi
+        call: vi
           .fn()
           .mockImplementation(
             async (_id: string, input: Record<string, unknown>) => {
@@ -94,7 +94,7 @@ describe("conformance — snake_case kwargs (Algorithm C-SNAKE)", () => {
       } finally {
         exitSpy.mockRestore();
       }
-      expect(executor.execute).toHaveBeenCalledTimes(1);
+      expect(executor.call).toHaveBeenCalledTimes(1);
       const actual = captured.input ?? {};
       for (const [key, expected] of Object.entries(tc.expected_input)) {
         expect(

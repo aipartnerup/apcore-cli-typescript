@@ -84,7 +84,7 @@ describe("display-helpers binding overlay fallback (FE-11)", () => {
 
     const { getDisplay } = await import("../src/display-helpers.js");
     const display = getDisplay({
-      id: "demo.goodbye",
+      moduleId: "demo.goodbye",
       name: "goodbye",
       description: "Say goodbye",
     });
@@ -118,7 +118,7 @@ describe("display-helpers binding overlay fallback (FE-11)", () => {
     // overlay map MUST NOT shadow it — the descriptor wins.
     const { getDisplay } = await import("../src/display-helpers.js");
     const display = getDisplay({
-      id: "demo.hello",
+      moduleId: "demo.hello",
       name: "hello",
       description: "Say hello",
       metadata: {

@@ -19,23 +19,23 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 function makeMod(
-  id: string,
+  moduleId: string,
   desc = "Test module",
   inputSchema?: Record<string, unknown>,
   tags: string[] = [],
 ): ModuleDescriptor {
-  return { id, name: id, description: desc, inputSchema, tags };
+  return { moduleId, name: moduleId, description: desc, inputSchema, tags };
 }
 
 function makeRegistry(modules: ModuleDescriptor[]) {
   return {
-    listModules: () => modules,
-    getModule: (id: string) => modules.find((m) => m.id === id) ?? null,
+    list: () => modules.map((m: ModuleDescriptor) => m.moduleId),
+    getDefinition: (id: string) => modules.find((m) => m.moduleId === id) ?? null,
   };
 }
 
 function makeExecutor(): Executor {
-  return { execute: vi.fn().mockResolvedValue({ ok: true }) };
+  return { call: vi.fn().mockResolvedValue({ ok: true }) };
 }
 
 /** Invoke the CLI with process.exit intercepted; returns captured exit code. */
@@ -45,7 +45,7 @@ async function invokeAndCaptureExit(
   executorResult: unknown = { ok: true },
 ): Promise<number> {
   const registry = makeRegistry(modules);
-  const executor: Executor = { execute: vi.fn().mockResolvedValue(executorResult) };
+  const executor: Executor = { call: vi.fn().mockResolvedValue(executorResult) };
   const program = createCli({
     progName: "apcore-cli",
     registry,
@@ -178,13 +178,13 @@ describe("e2e — exit codes", () => {
 // ---------------------------------------------------------------------------
 
 describe("e2e — module execution", () => {
-  it("exec invokes executor.execute() with parsed input", async () => {
+  it("exec invokes executor.call() with parsed input", async () => {
     const mods = [makeMod("math.add", "Add", {
       type: "object",
       properties: { a: { type: "integer" }, b: { type: "integer" } },
     })];
     const registry = makeRegistry(mods);
-    const executor: Executor = { execute: vi.fn().mockResolvedValue({ sum: 15 }) };
+    const executor: Executor = { call: vi.fn().mockResolvedValue({ sum: 15 }) };
     const program = createCli({
       progName: "apcore-cli",
       registry,

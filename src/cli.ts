@@ -15,25 +15,49 @@ import { warn } from "./logger.js";
 import { getReservedGroupNames } from "./builtin-group.js";
 import { EXIT_CODES } from "./errors.js";
 
-// D9-W2 (2026-05-12): apcore-js is already a real peer dep (see init-cmd.ts:31,
-// config.ts:92), but the published Registry / ModuleDescriptor shapes diverge
-// from what this CLI consumes — apcore-js uses `list()` / `getDefinition()`
-// and `moduleId` field, while we depend on `listModules()` / `getModule()`
-// and `id`. CLAUDE.md v0.9.0 "Known gap" documents this. The interfaces below
-// remain local until the apcore-js Registry surface aligns (or this CLI is
-// rewritten to adapt to apcore-js's actual shape). The Executor placeholder
-// was aligned with upstream camelCase in the 0.19.0 upgrade — only the
-// Registry / ModuleDescriptor side stays divergent.
+// v0.10.0 alignment (2026-05-18, resolves "D9-W2 Known gap"): the CLI's
+// Registry, Executor, and ModuleDescriptor shim interfaces now match
+// apcore-js >= 0.22.0 — Registry.list() / Registry.getDefinition(),
+// Executor.call(), and ModuleDescriptor.moduleId. Embedders may pass
+// apcore-js `Registry` / `Executor` instances (and the descriptors they
+// return) directly to createCli — no adapter is needed. CLI JSON output
+// continues to emit the field as `id` for backward compatibility with
+// downstream scripts; see the moduleId → id mapping in `output.ts`.
 
 // ---------------------------------------------------------------------------
 // CLI-internal type shims (paired with apcore-js shape divergence — see above).
 // Embedders must wrap their real apcore-js Registry to satisfy this interface.
 // ---------------------------------------------------------------------------
 
-/** CLI-internal Registry shim (see D9-W2 note above). */
+/**
+ * CLI-internal Registry shim. Method names align with apcore-js >= 0.22.0
+ * (Registry.list() / Registry.getDefinition()). Embedders may pass an
+ * apcore-js `Registry` instance directly — no adapter required.
+ *
+ * The required surface is intentionally the apcore-js surface (no batch
+ * `listModules()`); use the {@link listAllDefinitions} helper to iterate
+ * all descriptors.
+ */
 export interface Registry {
-  listModules(): ModuleDescriptor[];
-  getModule(moduleId: string): ModuleDescriptor | null;
+  /** Enumerate module IDs. Aligned with apcore-js Registry.list(). */
+  list(): string[];
+  /** Resolve a module descriptor by ID. Aligned with apcore-js Registry.getDefinition(). */
+  getDefinition(moduleId: string): ModuleDescriptor | null;
+}
+
+/**
+ * Iterate all descriptors via `list() + getDefinition()` — the apcore-js
+ * pattern. Used by CLI command builders that need full descriptor metadata
+ * for every registered module. Skips IDs whose getDefinition() returns null
+ * (a module unregistered between list() and getDefinition() is dropped).
+ */
+export function listAllDefinitions(registry: Registry): ModuleDescriptor[] {
+  const defs: ModuleDescriptor[] = [];
+  for (const id of registry.list()) {
+    const def = registry.getDefinition(id);
+    if (def) defs.push(def);
+  }
+  return defs;
 }
 
 /** Strategy info returned by Executor.describePipeline(). */
@@ -52,17 +76,20 @@ export interface StrategyStep {
   timeoutMs?: number;
 }
 
-/** Placeholder for apcore-js Executor. Shape-compatible with apcore-js >= 0.19.0. */
+/**
+ * CLI-internal Executor shim. Method names align with apcore-js >= 0.22.0
+ * (Executor.call as the primary invocation method). Embedders may pass
+ * an apcore-js `Executor` instance directly — no adapter required.
+ */
 export interface Executor {
-  execute(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
+  /** Invoke a module. Aligned with apcore-js Executor.call(). */
+  call(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
   /** Validate inputs without executing. Returns a PreflightResult. */
   validate?(moduleId: string, input: Record<string, unknown>): Promise<PreflightResult>;
   /** Execute with pipeline trace. Returns [result, PipelineTrace]. */
   callWithTrace?(moduleId: string, input: Record<string, unknown>, options?: { strategy?: string }): Promise<[unknown, PipelineTrace]>;
   /** Stream execution — async iterator of chunks. */
   stream?(moduleId: string, input: Record<string, unknown>): AsyncIterable<unknown>;
-  /** Call a module (synchronous-style, used by system commands). */
-  call?(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
   /**
    * Describe the executor's currently-set strategy. Returns StrategyInfo
    * (apcore-js >= 0.18.0). Takes no arguments — to introspect a different
@@ -106,10 +133,24 @@ export interface PipelineTrace {
   readonly steps: readonly PipelineTraceStep[];
 }
 
-/** Placeholder for apcore-js ModuleDescriptor. */
+/**
+ * CLI-internal ModuleDescriptor shim. Field names align with apcore-js
+ * >= 0.22.0 — embedders may pass apcore-js descriptors directly without
+ * field-level remapping. The interface is intentionally a structural
+ * subset of apcore-js's `ModuleDescriptor`: only fields actually consumed
+ * by the CLI are listed. apcore-js descriptors satisfy this shape
+ * trivially because every CLI-required field is also required there with
+ * the same name and a compatible type.
+ *
+ * Note: CLI JSON output (e.g. `apcli list --format json`) still emits the
+ * field as `id` for backward compatibility with downstream scripts —
+ * see `output.ts` for the moduleId → id mapping at the output boundary.
+ */
 export interface ModuleDescriptor {
-  id: string;
-  name: string;
+  /** Module ID (`a.b.c` form). Aligned with apcore-js `ModuleDescriptor.moduleId`. */
+  moduleId: string;
+  /** Human-readable name. `null` when unset (matches apcore-js). */
+  name: string | null;
   description: string;
   tags?: string[];
   inputSchema?: Record<string, unknown>;
@@ -187,8 +228,8 @@ export class LazyModuleGroup {
       return;
     }
     try {
-      for (const descriptor of this.registry.listModules()) {
-        const moduleId = descriptor.id;
+      for (const descriptor of listAllDefinitions(this.registry)) {
+        const moduleId = descriptor.moduleId;
         this.descriptorCache.set(moduleId, descriptor);
         const display = getDisplay(descriptor);
         const cliDisplay = (display.cli && typeof display.cli === "object" && !Array.isArray(display.cli))
@@ -215,7 +256,7 @@ export class LazyModuleGroup {
     for (const [alias, moduleId] of this.aliasMap) {
       reverse.set(moduleId, alias);
     }
-    const moduleIds = this.registry.listModules().map((m) => m.id);
+    const moduleIds = listAllDefinitions(this.registry).map((m) => m.moduleId);
     const names = moduleIds.map((mid) => reverse.get(mid) ?? mid);
     return [...new Set(names)].sort();
   }
@@ -235,7 +276,7 @@ export class LazyModuleGroup {
     // Look up in descriptor cache or registry
     let moduleDef = this.descriptorCache.get(moduleId);
     if (!moduleDef) {
-      moduleDef = this.registry.getModule(moduleId) ?? undefined;
+      moduleDef = this.registry.getDefinition(moduleId) ?? undefined;
     }
     if (!moduleDef) {
       return null;
@@ -416,8 +457,8 @@ export class GroupedModuleGroup extends LazyModuleGroup {
       return;
     }
     this.buildAliasMap();
-    for (const descriptor of this.registry.listModules()) {
-      const moduleId = descriptor.id;
+    for (const descriptor of listAllDefinitions(this.registry)) {
+      const moduleId = descriptor.moduleId;
       const cached = this.descriptorCache.get(moduleId);
       if (!cached) {
         continue;

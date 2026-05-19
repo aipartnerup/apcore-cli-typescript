@@ -44,8 +44,8 @@ const FIXTURE_ROOT = path.join(
 
 function makeMockRegistry(): Registry {
   return {
-    listModules: (): ModuleDescriptor[] => [],
-    getModule: (): ModuleDescriptor | null => null,
+    list: (): string[] => [],
+    getDefinition: (): ModuleDescriptor | null => null,
   } as unknown as Registry;
 }
 

@@ -16,14 +16,14 @@ import type { ModuleDescriptor, Registry, Executor } from "../src/cli.js";
 // ---------------------------------------------------------------------------
 
 function makeMod(
-  id: string,
+  moduleId: string,
   description = "desc",
   display?: Record<string, unknown>,
   metadata?: Record<string, unknown>,
 ): ModuleDescriptor {
   const m: ModuleDescriptor = {
-    id,
-    name: id,
+    moduleId,
+    name: moduleId,
     description,
     tags: [],
     metadata: metadata ?? {},
@@ -36,13 +36,13 @@ function makeMod(
 
 function makeRegistry(modules: ModuleDescriptor[]): Registry {
   return {
-    listModules: () => modules,
-    getModule: (id: string) => modules.find((m) => m.id === id) ?? null,
+    list: () => modules.map((m: ModuleDescriptor) => m.moduleId),
+    getDefinition: (id: string) => modules.find((m) => m.moduleId === id) ?? null,
   };
 }
 
 const mockExecutor: Executor = {
-  execute: vi.fn().mockResolvedValue({ result: "ok" }),
+  call: vi.fn().mockResolvedValue({ result: "ok" }),
 };
 
 function makeGroupedGroup(
@@ -473,11 +473,11 @@ describe("apcli group parity (FE-13)", () => {
   it("createCli registers the canonical apcli subcommands under an 'apcli' Commander group", async () => {
     const { createCli } = await import("../src/main.js");
     const registry = {
-      listModules: () => [],
-      getModule: () => null,
+      list: () => [],
+      getDefinition: () => null,
     };
     const executor = {
-      execute: vi.fn(async () => ({})),
+      call: vi.fn(async () => ({})),
       call: vi.fn(async () => ({})),
       validate: vi.fn(async () => ({ valid: true, requiresApproval: false, checks: [] })),
     };

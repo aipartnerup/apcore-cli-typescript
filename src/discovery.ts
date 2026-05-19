@@ -9,6 +9,7 @@
 
 import { Command, Option } from "commander";
 import { checkApproval } from "./approval.js";
+import { listAllDefinitions } from "./cli.js";
 import type { Executor, ModuleDescriptor, Registry } from "./cli.js";
 import { EXIT_CODES, exitCodeForError } from "./errors.js";
 import { validateModuleId, collectInput } from "./main.js";
@@ -127,7 +128,7 @@ export function registerListCommand(
       }
 
       let modules: ModuleDescriptor[] = [];
-      for (const m of registry.listModules()) {
+      for (const m of listAllDefinitions(registry)) {
         modules.push(m);
       }
 
@@ -145,7 +146,7 @@ export function registerListCommand(
         const query = opts.search.toLowerCase();
         modules = modules.filter(
           (m) =>
-            (m.id ?? "").toLowerCase().includes(query) ||
+            (m.moduleId ?? "").toLowerCase().includes(query) ||
             (m.description ?? "").toLowerCase().includes(query),
         );
       }
@@ -191,7 +192,7 @@ export function registerListCommand(
           );
         }
       } else {
-        modules.sort((a, b) => (a.id ?? "").localeCompare(b.id ?? ""));
+        modules.sort((a, b) => (a.moduleId ?? "").localeCompare(b.moduleId ?? ""));
         if (opts.reverse) {
           modules.reverse();
         }
@@ -201,9 +202,9 @@ export function registerListCommand(
       let showExposureCol = false;
       if (exposureFilter && opts.exposure !== "all") {
         if (opts.exposure === "exposed") {
-          modules = modules.filter((m) => exposureFilter.isExposed(m.id ?? ""));
+          modules = modules.filter((m) => exposureFilter.isExposed(m.moduleId ?? ""));
         } else if (opts.exposure === "hidden") {
-          modules = modules.filter((m) => !exposureFilter.isExposed(m.id ?? ""));
+          modules = modules.filter((m) => !exposureFilter.isExposed(m.moduleId ?? ""));
         }
       }
       if (opts.exposure === "all" && exposureFilter) {
@@ -234,7 +235,7 @@ export function registerDescribeCommand(
     .action((moduleId: string, opts: { format?: string }) => {
       validateModuleId(moduleId);
 
-      const moduleDef = registry.getModule(moduleId);
+      const moduleDef = registry.getDefinition(moduleId);
       if (!moduleDef) {
         process.stderr.write(
           `Error: Module '${moduleId}' not found.\n`,
@@ -299,7 +300,7 @@ export function registerExecCommand(
     ) => {
       validateModuleId(moduleId);
 
-      const moduleDef = registry.getModule(moduleId);
+      const moduleDef = registry.getDefinition(moduleId);
       if (!moduleDef) {
         process.stderr.write(`Error: Module '${moduleId}' not found.\n`);
         process.exit(EXIT_CODES.MODULE_NOT_FOUND);
@@ -399,7 +400,7 @@ export function registerValidateCommand(
     .action(async (moduleId: string, opts: { input?: string; format?: string }) => {
       validateModuleId(moduleId);
 
-      const moduleDef = registry.getModule(moduleId);
+      const moduleDef = registry.getDefinition(moduleId);
       if (!moduleDef) {
         process.stderr.write(`Error: Module '${moduleId}' not found.\n`);
         process.exit(EXIT_CODES.MODULE_NOT_FOUND);

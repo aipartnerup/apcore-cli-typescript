@@ -19,16 +19,16 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 function makeMod(
-  id: string,
+  moduleId: string,
   desc = "Test module",
   inputSchema?: Record<string, unknown>,
 ): ModuleDescriptor {
-  return { id, name: id, description: desc, inputSchema };
+  return { moduleId, name: moduleId, description: desc, inputSchema };
 }
 
 function makeExecutor(result: unknown = { ok: true }): Executor {
   return {
-    execute: vi.fn().mockResolvedValue(result),
+    call: vi.fn().mockResolvedValue(result),
   };
 }
 
@@ -138,8 +138,8 @@ describe("createCli() — allowedPrefixes (D1-006)", () => {
 describe("createCli() with pre-populated registry", () => {
   it("accepts registry via CreateCliOptions", () => {
     const registry = {
-      listModules: () => [],
-      getModule: () => null,
+      list: () => [],
+      getDefinition: () => null,
     };
     const executor = {
       execute: async () => ({}),
@@ -153,8 +153,8 @@ describe("createCli() with pre-populated registry", () => {
 
   it("accepts registry without executor", () => {
     const registry = {
-      listModules: () => [],
-      getModule: () => null,
+      list: () => [],
+      getDefinition: () => null,
     };
     const cli = createCli({ registry, progName: "test-cli" });
     expect(cli.name()).toBe("test-cli");
@@ -195,12 +195,15 @@ describe("createCli() with pre-populated registry", () => {
       },
     );
     const registry = {
-      listModules: () => [
-        makeMod("public.add", "Public module"),
-        makeMod("public.sub", "Public module"),
-        makeMod("admin.secret", "Admin module"),
-      ],
-      getModule: () => null,
+      list: () => ["public.add", "public.sub", "admin.secret"],
+      getDefinition: (id: string) => {
+        const mods = [
+          makeMod("public.add", "Public module"),
+          makeMod("public.sub", "Public module"),
+          makeMod("admin.secret", "Admin module"),
+        ];
+        return mods.find((m) => m.moduleId === id) ?? null;
+      },
     };
     const executor = makeExecutor();
     const cli = createCli({
@@ -242,12 +245,14 @@ describe("createCli() with pre-populated registry", () => {
 
 describe("createCli() with APCore app client", () => {
   const mockRegistry = {
-    listModules: vi.fn(() => [makeMod("test.module", "A test module")]),
-    getModule: vi.fn(() => null),
+    list: vi.fn(() => ["test.module"]),
+    getDefinition: vi.fn((id: string) =>
+      id === "test.module" ? makeMod("test.module", "A test module") : null,
+    ),
   };
 
   const mockExecutor = {
-    execute: vi.fn(async () => ({})),
+    call: vi.fn(async () => ({})),
   };
 
   const mockApp = {
@@ -391,7 +396,7 @@ describe("buildModuleCommand()", () => {
 
     // Parse and execute
     await cmd.parseAsync(["--a", "1", "--b", "2"], { from: "user" });
-    expect(executor.execute).toHaveBeenCalledWith("math.add", { a: 1, b: 2 });
+    expect(executor.call).toHaveBeenCalledWith("math.add", { a: 1, b: 2 });
   });
 });
 
@@ -420,7 +425,7 @@ describe("buildModuleCommand() — pre-execute schema validation", () => {
     const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
     expect(stderrText).toContain("'url'");
     expect(stderrText).toContain("required");
-    expect(executor.execute).not.toHaveBeenCalled();
+    expect(executor.call).not.toHaveBeenCalled();
   });
 
   it("proceeds to execute when all required fields are provided", async () => {
@@ -436,7 +441,7 @@ describe("buildModuleCommand() — pre-execute schema validation", () => {
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
     await cmd.parseAsync(["--url", "https://example.com"], { from: "user" });
-    expect(executor.execute).toHaveBeenCalledWith("fetch.data", { url: "https://example.com" });
+    expect(executor.call).toHaveBeenCalledWith("fetch.data", { url: "https://example.com" });
   });
 
   it("skips validation when schema has no properties", async () => {
@@ -448,7 +453,7 @@ describe("buildModuleCommand() — pre-execute schema validation", () => {
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
     await cmd.parseAsync([], { from: "user" });
-    expect(executor.execute).toHaveBeenCalled();
+    expect(executor.call).toHaveBeenCalled();
   });
 
   it("exits 45 when required field is missing (integer schema)", async () => {
@@ -470,7 +475,7 @@ describe("buildModuleCommand() — pre-execute schema validation", () => {
     const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
     expect(stderrText).toContain("'count'");
     expect(stderrText).toContain("required");
-    expect(executor.execute).not.toHaveBeenCalled();
+    expect(executor.call).not.toHaveBeenCalled();
   });
 
   it("exits 45 with type-mismatch message when integer field receives string via --input", async () => {
@@ -500,7 +505,7 @@ describe("buildModuleCommand() — pre-execute schema validation", () => {
       const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
       expect(stderrText).toContain("'count'");
       expect(stderrText).toContain("must be a number");
-      expect(executor.execute).not.toHaveBeenCalled();
+      expect(executor.call).not.toHaveBeenCalled();
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -535,14 +540,14 @@ describe("createCli FE-13 apcli group integration", () => {
 
   function makeRegistry() {
     return {
-      listModules: () => [],
-      getModule: () => null,
+      list: () => [],
+      getDefinition: () => null,
     };
   }
 
   function makeFakeExecutor(): Executor {
     return {
-      execute: vi.fn(async () => ({})),
+      call: vi.fn(async () => ({})),
       call: vi.fn(async () => ({})),
       validate: vi.fn(async () => ({ valid: true, requiresApproval: false, checks: [] })),
     };
@@ -880,14 +885,14 @@ describe("createCli FE-13 apcli group integration", () => {
 describe("createCli FE-13 §11.3 — no root-level deprecation shims", () => {
   function makeRegistry() {
     return {
-      listModules: () => [],
-      getModule: () => null,
+      list: () => [],
+      getDefinition: () => null,
     };
   }
 
   function makeFakeExecutor(): Executor {
     return {
-      execute: vi.fn(async () => ({})),
+      call: vi.fn(async () => ({})),
       call: vi.fn(async () => ({})),
       validate: vi.fn(async () => ({ valid: true, requiresApproval: false, checks: [] })),
     };
@@ -942,7 +947,7 @@ describe("createCli FE-13 §11.3 — no root-level deprecation shims", () => {
 
 describe("Review Issue 2: _ALWAYS_REGISTERED check order", () => {
   function makeRegistry() {
-    return { listModules: () => [], getModule: () => null };
+    return { list: () => [], getDefinition: () => null };
   }
 
   it("logs a WARNING (not silent skip) when _ALWAYS_REGISTERED entry is skipped for lack of executor", () => {
@@ -969,7 +974,7 @@ describe("Review Issue 2: _ALWAYS_REGISTERED check order", () => {
 
   it("T-APCLI-24 parity retained: executor + include:['list'] registers list + exec", () => {
     const executor: Executor = {
-      execute: vi.fn(async () => ({})),
+      call: vi.fn(async () => ({})),
       validate: vi.fn(async () => ({ valid: true, requiresApproval: false, checks: [] })),
     };
     const cli = createCli({
@@ -1011,11 +1016,11 @@ describe("Review Issue 3: standalone registry-unwired emits clear error", () => 
 
   it("embedded mode with wired registry does NOT trigger the unwired-registry error", async () => {
     const registry = {
-      listModules: vi.fn(() => []),
-      getModule: vi.fn(() => null),
+      list: vi.fn(() => []),
+      getDefinition: vi.fn(() => null),
     };
     const executor: Executor = {
-      execute: vi.fn(async () => ({})),
+      call: vi.fn(async () => ({})),
       validate: vi.fn(async () => ({ valid: true, requiresApproval: false, checks: [] })),
     };
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -1026,7 +1031,7 @@ describe("Review Issue 3: standalone registry-unwired emits clear error", () => 
 
     const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
     expect(stderrText).not.toContain("no module registry wired");
-    expect(registry.listModules).toHaveBeenCalled();
+    expect(registry.list).toHaveBeenCalled();
 
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
@@ -1039,7 +1044,7 @@ describe("Review Issue 4: createCli param-combination errors use EXIT_CODES, not
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("__exit__");
     }) as never);
-    const executor: Executor = { execute: vi.fn(async () => ({})) };
+    const executor: Executor = { call: vi.fn(async () => ({})) };
     expect(() => createCli({ executor, progName: "t" })).toThrow("__exit__");
     expect(exitSpy).toHaveBeenCalledWith(2);
     const stderrText = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
@@ -1053,8 +1058,8 @@ describe("Review Issue 4: createCli param-combination errors use EXIT_CODES, not
     const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("__exit__");
     }) as never);
-    const registry = { listModules: () => [], getModule: () => null };
-    const executor: Executor = { execute: vi.fn(async () => ({})) };
+    const registry = { list: () => [], getDefinition: () => null };
+    const executor: Executor = { call: vi.fn(async () => ({})) };
     const app = { registry, executor };
     expect(() => createCli({ app, registry, progName: "t" })).toThrow("__exit__");
     expect(exitSpy).toHaveBeenCalledWith(2);
@@ -1067,11 +1072,11 @@ describe("Review Issue 4: createCli param-combination errors use EXIT_CODES, not
 
 describe("Review Issue 5: extraCommands collision rules (post-v0.8 shim removal)", () => {
   function makeRegistry() {
-    return { listModules: () => [], getModule: () => null };
+    return { list: () => [], getDefinition: () => null };
   }
   function makeFakeExecutor(): Executor {
     return {
-      execute: vi.fn(async () => ({})),
+      call: vi.fn(async () => ({})),
       validate: vi.fn(async () => ({ valid: true, requiresApproval: false, checks: [] })),
     };
   }
@@ -1128,11 +1133,11 @@ describe("Review Issue 5: extraCommands collision rules (post-v0.8 shim removal)
 
 describe("Review Issue 6: apcli group hidden uses Commander public API, not _hidden", () => {
   function makeRegistry() {
-    return { listModules: () => [], getModule: () => null };
+    return { list: () => [], getDefinition: () => null };
   }
   function makeFakeExecutor(): Executor {
     return {
-      execute: vi.fn(async () => ({})),
+      call: vi.fn(async () => ({})),
       validate: vi.fn(async () => ({ valid: true, requiresApproval: false, checks: [] })),
     };
   }
@@ -1278,14 +1283,14 @@ describe("collectInput — file-path input", () => {
 
 describe("createCli — CliApprovalHandler wiring", () => {
   const makeRegistry = (): import("../src/cli.js").Registry => ({
-    listModules: () => [],
-    getModule: () => undefined,
+    list: () => [],
+    getDefinition: () => undefined,
   });
 
   it("calls executor.setApprovalHandler when the method is available", () => {
     const setHandler = vi.fn();
     const executor = {
-      execute: vi.fn(),
+      call: vi.fn(),
       setApprovalHandler: setHandler,
     } as unknown as Executor;
     createCli({ registry: makeRegistry(), executor, progName: "test-cli" });
@@ -1298,7 +1303,7 @@ describe("createCli — CliApprovalHandler wiring", () => {
   });
 
   it("silently skips wiring when executor lacks setApprovalHandler", () => {
-    const executor = { execute: vi.fn() } as unknown as Executor;
+    const executor = { call: vi.fn() } as unknown as Executor;
     expect(() =>
       createCli({ registry: makeRegistry(), executor, progName: "test-cli" }),
     ).not.toThrow();
@@ -1306,7 +1311,7 @@ describe("createCli — CliApprovalHandler wiring", () => {
 
   it("survives a throwing setApprovalHandler (non-fatal path)", () => {
     const executor = {
-      execute: vi.fn(),
+      call: vi.fn(),
       setApprovalHandler: () => { throw new Error("boom"); },
     } as unknown as Executor;
     expect(() =>

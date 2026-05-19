@@ -113,11 +113,15 @@ export function computeSummary(
  * data. Returns whether real usage data was used; when false, callers should
  * surface a visible message that explains the fallback (issue #17 AC).
  *
- * @param modules    Array of objects exposing an `id` (or `module_id`) field.
+ * @param modules    Array of objects exposing a `moduleId`, `id`, or `module_id` field.
+ *                   Multiple field aliases are accepted to keep this helper usable
+ *                   against CLI's internal ModuleDescriptor (`moduleId`), legacy
+ *                   pre-0.10 ModuleDescriptor (`id`), and snake_case payloads
+ *                   coming from sys_modules (`module_id`).
  * @param field      One of `calls`, `errors`, `latency`.
  * @param reverse    Defaults to true (descending — biggest first).
  */
-export function sortModulesByUsage<T extends { id?: string; module_id?: string }>(
+export function sortModulesByUsage<T extends { moduleId?: string; id?: string; module_id?: string }>(
   modules: T[],
   field: "calls" | "errors" | "latency",
   options: { reverse?: boolean; auditPath?: string; period?: UsagePeriod } = {},
@@ -128,14 +132,16 @@ export function sortModulesByUsage<T extends { id?: string; module_id?: string }
     period: options.period,
   });
 
+  const idOf = (m: T): string => m.moduleId ?? m.id ?? m.module_id ?? "";
+
   if (summary.size === 0) {
-    modules.sort((a, b) => (a.id ?? a.module_id ?? "").localeCompare(b.id ?? b.module_id ?? ""));
+    modules.sort((a, b) => idOf(a).localeCompare(idOf(b)));
     if (reverse) modules.reverse();
     return { used: false };
   }
 
   const key = (m: T): number => {
-    const id = m.id ?? m.module_id ?? "";
+    const id = idOf(m);
     const s = summary.get(id);
     if (!s) return 0;
     return field === "latency" ? s.latency_ms : (field === "calls" ? s.calls : s.errors);
@@ -145,7 +151,7 @@ export function sortModulesByUsage<T extends { id?: string; module_id?: string }
     const diff = key(a) - key(b);
     if (diff !== 0) return reverse ? -diff : diff;
     // Stable secondary sort by id for deterministic output when counts tie.
-    return (a.id ?? a.module_id ?? "").localeCompare(b.id ?? b.module_id ?? "");
+    return idOf(a).localeCompare(idOf(b));
   });
   return { used: true };
 }

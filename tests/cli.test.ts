@@ -9,18 +9,18 @@ import { resolveFormat } from "../src/output.js";
 import type { ModuleDescriptor, Registry, Executor } from "../src/cli.js";
 
 function makeMod(id: string, desc = "Test module"): ModuleDescriptor {
-  return { id, name: id, description: desc };
+  return { moduleId: id, name: id, description: desc };
 }
 
 function makeRegistry(modules: ModuleDescriptor[]): Registry {
   return {
-    listModules: () => modules,
-    getModule: (id: string) => modules.find((m) => m.id === id) ?? null,
+    list: () => modules.map((m: ModuleDescriptor) => m.moduleId),
+    getDefinition: (id: string) => modules.find((m) => m.moduleId === id) ?? null,
   };
 }
 
 const mockExecutor: Executor = {
-  execute: vi.fn().mockResolvedValue({ result: "ok" }),
+  call: vi.fn().mockResolvedValue({ result: "ok" }),
 };
 
 afterEach(() => {

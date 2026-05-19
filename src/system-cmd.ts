@@ -17,18 +17,17 @@ import { formatExecResult, resolveFormat } from "./output.js";
 // ---------------------------------------------------------------------------
 
 /**
- * Call a system module via executor.call() when available, falling back to
- * executor.execute() otherwise.
+ * Call a system module. After 0.10.0 the `Executor.call` method is the
+ * single required invocation surface (aligned with apcore-js >= 0.22.0);
+ * this helper is retained so call sites can switch invocation strategies
+ * (sandboxed vs direct) without each site repeating the call.
  */
 async function callSystemModule(
   executor: Executor,
   moduleId: string,
   inputs: Record<string, unknown>,
 ): Promise<unknown> {
-  if (executor.call) {
-    return executor.call(moduleId, inputs);
-  }
-  return executor.execute(moduleId, inputs);
+  return executor.call(moduleId, inputs);
 }
 
 /**
@@ -79,7 +78,7 @@ async function requireApprovalForSystemCommand(
   autoApprove: boolean,
 ): Promise<void> {
   const syntheticModuleDef: ModuleDescriptor = {
-    id: moduleId,
+    moduleId,
     name: moduleId,
     description: `system command: ${moduleId}`,
     annotations: { requires_approval: true },

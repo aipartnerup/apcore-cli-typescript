@@ -27,6 +27,12 @@ function runFsOp<T>(op: string, targetPath: string, fn: () => T, partial?: strin
   }
 }
 
+// Templates emit `// TODO: implement` placeholders into the GENERATED user
+// module. These are user-facing scaffolding — not SDK source-level TODOs —
+// and intentionally match the parity templates in
+// ../apcore-cli-python/src/apcore_cli/init_cmd.py and
+// ../apcore-cli-rust/src/init_cmd.rs. Audit tools that grep for "TODO"
+// should treat occurrences inside the template literals below as expected.
 const DECORATOR_TEMPLATE = `\
 import { module } from "apcore-js";
 import { Type } from "@sinclair/typebox";

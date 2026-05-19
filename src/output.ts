@@ -27,7 +27,7 @@ function descriptorToScanned(
     | Record<string, unknown>
     | null;
   return {
-    moduleId: m.id,
+    moduleId: m.moduleId,
     description: m.description ?? "",
     inputSchema: (m.inputSchema ?? {}) as Record<string, unknown>,
     outputSchema: (m.outputSchema ?? {}) as Record<string, unknown>,
@@ -123,21 +123,25 @@ export async function formatModuleList(
     if (showDeps) headers.push("Deps");
     if (exposureFilter) headers.push("Exposure");
     const rows = modules.map((m) => {
-      const base = [m.id, truncate(m.description, 80), (m.tags ?? []).join(", ")];
+      const base = [m.moduleId, truncate(m.description, 80), (m.tags ?? []).join(", ")];
       if (showDeps) {
         const deps = (m as unknown as Record<string, unknown>).dependencies;
         base.push(String(Array.isArray(deps) ? deps.length : 0));
       }
       if (exposureFilter) {
-        base.push(exposureFilter.isExposed(m.id ?? "") ? "\u2713" : "\u2014");
+        base.push(exposureFilter.isExposed(m.moduleId ?? "") ? "\u2713" : "\u2014");
       }
       return base;
     });
     process.stdout.write(formatTable(headers, rows));
   } else if (format === "json") {
+    // CLI JSON output preserves the `id` field name for backward
+    // compatibility with downstream scripts (jq pipelines etc.).
+    // Internal `moduleId` is mapped to user-facing `id` here at the
+    // output boundary.
     const result = modules.map((m) => {
       const entry: Record<string, unknown> = {
-        id: m.id,
+        id: m.moduleId,
         description: m.description,
         tags: m.tags ?? [],
       };
@@ -146,7 +150,7 @@ export async function formatModuleList(
         entry.dependency_count = Array.isArray(deps) ? deps.length : 0;
       }
       if (exposureFilter) {
-        entry.exposed = exposureFilter.isExposed(m.id ?? "");
+        entry.exposed = exposureFilter.isExposed(m.moduleId ?? "");
       }
       return entry;
     });
@@ -194,7 +198,7 @@ export async function formatModuleDetail(
   format: string,
 ): Promise<void> {
   if (format === "table") {
-    process.stdout.write(`\nModule: ${moduleDef.id}\n`);
+    process.stdout.write(`\nModule: ${moduleDef.moduleId}\n`);
     process.stdout.write(`\nDescription:\n  ${moduleDef.description}\n`);
 
     if (moduleDef.inputSchema && Object.keys(moduleDef.inputSchema).length > 0) {
@@ -239,8 +243,11 @@ export async function formatModuleDetail(
       process.stdout.write(`\nTags: ${tags.join(", ")}\n`);
     }
   } else if (format === "json") {
+    // CLI JSON output preserves the `id` field name for backward
+    // compatibility with downstream scripts. Internal `moduleId` is
+    // mapped to user-facing `id` here at the output boundary.
     const result: Record<string, unknown> = {
-      id: moduleDef.id,
+      id: moduleDef.moduleId,
       description: moduleDef.description,
     };
     if (moduleDef.inputSchema) result.input_schema = moduleDef.inputSchema;

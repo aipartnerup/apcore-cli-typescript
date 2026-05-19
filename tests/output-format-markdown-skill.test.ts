@@ -12,7 +12,7 @@ import { formatModuleList, formatModuleDetail } from "../src/output.js";
 import type { ModuleDescriptor } from "../src/cli.js";
 
 const makeDescriptor = (overrides: Partial<ModuleDescriptor> = {}): ModuleDescriptor => ({
-  id: "math.add",
+  moduleId: "math.add",
   name: "math.add",
   description: "Add two numbers.",
   tags: [],
@@ -33,7 +33,7 @@ const makeDescriptor = (overrides: Partial<ModuleDescriptor> = {}): ModuleDescri
 });
 
 const makeScanned = (d: ModuleDescriptor): ScannedModule => ({
-  moduleId: d.id,
+  moduleId: d.moduleId,
   description: d.description ?? "",
   inputSchema: (d.inputSchema ?? {}) as Record<string, unknown>,
   outputSchema: (d.outputSchema ?? {}) as Record<string, unknown>,

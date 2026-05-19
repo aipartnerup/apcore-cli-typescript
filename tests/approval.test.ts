@@ -24,7 +24,7 @@ describe("checkApproval", () => {
     requiresApproval: boolean,
     annotations?: Record<string, unknown>,
   ): ModuleDescriptor => ({
-    id: "test.mod",
+    moduleId: "test.mod",
     name: "test.mod",
     description: "Test module",
     requiresApproval,
@@ -61,7 +61,7 @@ describe("checkApproval", () => {
 
   it("handles missing annotations gracefully", async () => {
     const mod: ModuleDescriptor = {
-      id: "test",
+      moduleId: "test",
       name: "test",
       description: "Test",
     };
@@ -70,7 +70,7 @@ describe("checkApproval", () => {
 
   it("checks annotations.requires_approval when requiresApproval not set", async () => {
     const mod: ModuleDescriptor = {
-      id: "test",
+      moduleId: "test",
       name: "test",
       description: "Test",
       annotations: { requires_approval: true },

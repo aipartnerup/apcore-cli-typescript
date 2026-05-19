@@ -20,19 +20,19 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 function makeMod(id: string, tags: string[] = []): ModuleDescriptor {
-  return { id, name: id, description: "Test", tags, inputSchema: { type: "object", properties: {} } };
+  return { moduleId: id, name: id, description: "Test", tags, inputSchema: { type: "object", properties: {} } };
 }
 
 function makeRegistry(ids: string[] = []) {
   const mods = ids.map(makeMod);
   return {
-    listModules: () => mods,
-    getModule: (id: string) => mods.find((m) => m.id === id) ?? null,
+    list: () => mods.map((m: ModuleDescriptor) => m.moduleId),
+    getDefinition: (id: string) => mods.find((m) => m.moduleId === id) ?? null,
   };
 }
 
 function makeExecutor(): Executor {
-  return { execute: vi.fn().mockResolvedValue({ ok: true }) };
+  return { call: vi.fn().mockResolvedValue({ ok: true }) };
 }
 
 // ---------------------------------------------------------------------------

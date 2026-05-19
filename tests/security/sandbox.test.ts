@@ -9,7 +9,7 @@ import type { Executor } from "../../src/cli.js";
 
 describe("Sandbox", () => {
   const mockExecutor: Executor = {
-    execute: vi.fn().mockResolvedValue({ result: "ok" }),
+    call: vi.fn().mockResolvedValue({ result: "ok" }),
   };
 
   describe("execute() — disabled (passthrough)", () => {
@@ -17,7 +17,7 @@ describe("Sandbox", () => {
       const sandbox = new Sandbox(false);
       const result = await sandbox.execute("test.mod", { x: 1 }, mockExecutor);
       expect(result).toEqual({ result: "ok" });
-      expect(mockExecutor.execute).toHaveBeenCalledWith("test.mod", { x: 1 });
+      expect(mockExecutor.call).toHaveBeenCalledWith("test.mod", { x: 1 });
     });
   });
 
@@ -162,7 +162,7 @@ function makeFakeChildWithStdinEmitter(): FakeChildWithStdinEmitter {
 
 describe("Sandbox subprocess wiring (mocked spawn)", () => {
   const mockExecutor: Executor = {
-    execute: vi.fn().mockResolvedValue({ result: "ok" }),
+    call: vi.fn().mockResolvedValue({ result: "ok" }),
   };
 
   // -------------------------------------------------------------------------

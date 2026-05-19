@@ -38,6 +38,11 @@ import {
 } from "./system-cmd.js";
 import { registerPipelineCommand } from "./strategy.js";
 import { ApcliGroup, setReservedGroupNames } from "./builtin-group.js";
+// apcore-toolkit is a REQUIRED peer dependency (>=0.7.0). Static import —
+// no runtime fallback. If toolkit is missing the import fails at module
+// load time with a clear MODULE_NOT_FOUND error, matching the package.json
+// peer-dependency contract. See CHANGELOG 0.10.0 (resolves 6.2).
+import { BindingLoader, DisplayResolver } from "apcore-toolkit";
 import type { ApcliConfig } from "./builtin-group.js";
 import { ExposureFilter } from "./exposure.js";
 import { AuditLogger, setAuditLogger } from "./security/audit.js";
@@ -683,8 +688,8 @@ function _registerApcliSubcommands(
     process.exit(EXIT_CODES.CONFIG_INVALID);
   };
   const effectiveRegistry: Registry = registry ?? {
-    listModules: () => emitUnwiredError(),
-    getModule: () => emitUnwiredError(),
+    list: () => emitUnwiredError(),
+    getDefinition: () => emitUnwiredError(),
   };
 
   const TABLE: _RegistrarEntry[] = [
@@ -789,17 +794,6 @@ export async function applyToolkitIntegration(
     return;
   }
 
-  let toolkit: Record<string, unknown>;
-  try {
-    // String indirection prevents bundlers from statically resolving the
-    // optional peer dependency at build time.
-    const toolkitModule = "apcore-toolkit";
-    toolkit = await import(/* @vite-ignore */ toolkitModule) as Record<string, unknown>;
-  } catch {
-    logWarn("apcore-toolkit not installed — toolkit features unavailable");
-    return;
-  }
-
   // ConventionScanner has no TypeScript equivalent (the Python adapter is
   // pydantic-specific and does not port cleanly). See the upstream
   // apcore-toolkit README for the tri-language parity note.
@@ -809,7 +803,7 @@ export async function applyToolkitIntegration(
 
   if (bindingPath) {
     try {
-      await loadBindingDisplayOverlay(toolkit, bindingPath, options.allowedPrefixes);
+      await loadBindingDisplayOverlay(bindingPath, options.allowedPrefixes);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logWarn(`apcore-toolkit: failed to load binding '${bindingPath}': ${msg}`);
@@ -825,25 +819,12 @@ export async function applyToolkitIntegration(
  * emit at scan time.
  */
 async function loadBindingDisplayOverlay(
-  toolkit: Record<string, unknown>,
   bindingPath: string,
   allowedPrefixes?: string[],
 ): Promise<void> {
-  const BindingLoaderCtor = toolkit.BindingLoader as
-    | (new () => { load(path: string): unknown[] })
-    | undefined;
-  const DisplayResolverCtor = toolkit.DisplayResolver as
-    | (new () => { resolve(mods: unknown[], opts?: { bindingPath?: string }): unknown[] })
-    | undefined;
-
-  if (!BindingLoaderCtor || !DisplayResolverCtor) {
-    // apcore-toolkit < 0.5.0 (no BindingLoader) — silently skip the overlay.
-    return;
-  }
-
-  const loader = new BindingLoaderCtor();
+  const loader = new BindingLoader();
   const scanned = loader.load(bindingPath);
-  const resolver = new DisplayResolverCtor();
+  const resolver = new DisplayResolver();
   const resolved = resolver.resolve(scanned, { bindingPath });
 
   // Mirrors Python's RegistryWriter `allowed_prefixes` gate: any entry whose
@@ -928,7 +909,7 @@ export function buildModuleCommand(
   cmdName?: string,
   verbose = verboseHelp,
 ): Command {
-  const moduleId = moduleDef.id;
+  const moduleId = moduleDef.moduleId;
   let resolvedSchema: Record<string, unknown> = {};
   let schemaOptions: OptionConfig[] = [];
 
@@ -1123,7 +1104,7 @@ export function buildModuleCommand(
 
       // 3. Pre-execute schema validation (parity with Python jsonschema.validate
       // and Rust validate_against_schema). Catches missing required fields before
-      // they reach executor.execute() and produce an opaque TypeError.
+      // they reach executor.call() and produce an opaque TypeError.
       if (resolvedSchema.properties) {
         const validationErr = validateInputSchema(resolvedSchema, merged);
         if (validationErr) {

@@ -42,12 +42,12 @@ import type { Registry, Executor, ModuleDescriptor } from "../../src/cli.js";
 // ---------------------------------------------------------------------------
 
 const MOCK_REGISTRY: Registry = {
-  listModules: (): ModuleDescriptor[] => [],
-  getModule: (): ModuleDescriptor | null => null,
+  list: (): string[] => [],
+  getDefinition: (): ModuleDescriptor | null => null,
 } as unknown as Registry;
 
 const MOCK_EXECUTOR: Executor = {
-  execute: async () => undefined,
+  call: async () => undefined,
   validate: async () => ({ valid: true, checks: [] }),
 } as unknown as Executor;
 
