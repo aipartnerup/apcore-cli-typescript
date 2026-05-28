@@ -708,6 +708,24 @@ function _registerApcliSubcommands(
     { name: "describe-pipeline", requiresExecutor: true,  register: (g, _r, ex) => registerPipelineCommand(g, ex!) },
   ];
 
+  // The six system subcommands register atomically: either all appear (the
+  // executor's registry exposes `system.health.summary`) or none do. Partial
+  // registration is a cross-SDK parity bug (apcore-cli usability-enhancements.md
+  // §register_system_commands). Mirrors apcore-cli-python `_system_modules_available`;
+  // the registry-lookup probe is used instead of `executor.validate` because
+  // `validate` is async in TS and cannot be awaited during synchronous registration.
+  const _SYSTEM_COMMANDS = new Set(["health", "usage", "enable", "disable", "reload", "config"]);
+  const systemModulesAvailable = ((): boolean => {
+    if (!executor) return false;
+    const reg = executor.registry ?? registry;
+    if (!reg) return false;
+    try {
+      return reg.getDefinition("system.health.summary") != null;
+    } catch {
+      return false;
+    }
+  })();
+
   const mode = apcliCfg.resolveVisibility();
   for (const entry of TABLE) {
     // Determine whether this entry would be registered BEFORE short-circuiting
@@ -723,6 +741,10 @@ function _registerApcliSubcommands(
         _ALWAYS_REGISTERED.has(entry.name) || apcliCfg.isSubcommandIncluded(entry.name);
     }
     if (!shouldRegister) continue;
+
+    // System-module gating (spec parity): skip the six system subcommands
+    // atomically when system modules are not available on the executor.
+    if (_SYSTEM_COMMANDS.has(entry.name) && !systemModulesAvailable) continue;
 
     // Executor-required entry but no executor wired. Silent skip for ordinary
     // entries — loud WARN for _ALWAYS_REGISTERED entries since the spec §4.9

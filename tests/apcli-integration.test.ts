@@ -245,8 +245,10 @@ describe("createCli — apcli group structure", () => {
     expect(subs).toContain("exec"); // FE-12 guarantee
   });
 
-  it("apcli has all 13 canonical subcommands under mode=all with executor", () => {
-    const registry = makeRegistry([]);
+  it("apcli has all 13 canonical subcommands under mode=all when system modules available", () => {
+    // D10-004: the six system subcommands register only when the executor's
+    // registry exposes `system.health.summary` (probe passes). Provide it here.
+    const registry = makeRegistry(["system.health.summary"]);
     const program = createCli({
       progName: "apcore-cli",
       registry,
@@ -259,5 +261,28 @@ describe("createCli — apcli group structure", () => {
     for (const name of APCLI_SUBCOMMAND_NAMES) {
       expect(subs.has(name)).toBe(true);
     }
+  });
+
+  it("system subcommands are hidden atomically when system modules unavailable (D10-004)", () => {
+    // Spec (usability-enhancements.md §register_system_commands): either all six
+    // system subcommands appear (system.health.summary probe passes) or none do.
+    // A registry without system.health.summary must hide all six, leaving the
+    // non-system subcommands intact. Parity with apcore-cli-python factory gating.
+    const registry = makeRegistry([]); // no system.health.summary
+    const program = createCli({
+      progName: "apcore-cli",
+      registry,
+      executor: makeExecutor(),
+      apcli: ApcliGroup.fromCliConfig(true, { registryInjected: true }),
+    });
+    const apcli = program.commands.find((c) => c.name() === "apcli");
+    expect(apcli).toBeDefined();
+    const subs = new Set(apcli!.commands.map((c) => c.name()));
+    for (const sysCmd of ["health", "usage", "enable", "disable", "reload", "config"]) {
+      expect(subs.has(sysCmd)).toBe(false);
+    }
+    // Non-system subcommands remain reachable.
+    expect(subs.has("list")).toBe(true);
+    expect(subs.has("exec")).toBe(true);
   });
 });

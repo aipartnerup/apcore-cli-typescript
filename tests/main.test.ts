@@ -541,7 +541,14 @@ describe("createCli FE-13 apcli group integration", () => {
   function makeRegistry() {
     return {
       list: () => [],
-      getDefinition: () => null,
+      // Expose `system.health.summary` so the D10-004 availability probe passes
+      // and the six system subcommands register (these FULL_SET tests assert all
+      // 13 are present when an executor is wired). Parity with apcore-cli-python
+      // factory `_system_modules_available`.
+      getDefinition: (id: string) =>
+        id === "system.health.summary"
+          ? ({ moduleId: id } as unknown as ModuleDescriptor)
+          : null,
     };
   }
 

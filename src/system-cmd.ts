@@ -7,6 +7,7 @@
  */
 
 import { Command } from "commander";
+import { Config } from "apcore-js";
 import { checkApproval } from "./approval.js";
 import type { Executor, ModuleDescriptor } from "./cli.js";
 import { exitCodeForError } from "./errors.js";
@@ -361,8 +362,11 @@ export function registerConfigCommand(apcliGroup: Command, executor: Executor): 
     .action(async (key: string, opts: { format?: string }) => {
       const fmt = resolveFormat(opts.format);
       try {
-        const result = await callSystemModule(executor, "system.config.get", { key });
-        const value = (result as Record<string, unknown>)?.value ?? result;
+        // Spec (usability-enhancements.md): `config get` reads Config.get(key)
+        // directly (read-only, no approval, no executor round-trip). Matches
+        // apcore-cli-python `Config().get(key)`. Does NOT route through
+        // executor.call("system.config.get").
+        const value = new Config().get(key);
         emitResult({ key, value }, fmt, () => {
           process.stdout.write(`${key} = ${JSON.stringify(value)}\n`);
         });

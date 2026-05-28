@@ -84,6 +84,12 @@ export interface StrategyStep {
 export interface Executor {
   /** Invoke a module. Aligned with apcore-js Executor.call(). */
   call(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
+  /**
+   * The executor's registry. Aligned with apcore-js `Executor.registry`.
+   * Used for synchronous availability probes (e.g. system-module gating)
+   * since `validate` is async and cannot be awaited during sync registration.
+   */
+  registry?: Registry;
   /** Validate inputs without executing. Returns a PreflightResult. */
   validate?(moduleId: string, input: Record<string, unknown>): Promise<PreflightResult>;
   /** Execute with pipeline trace. Returns [result, PipelineTrace]. */

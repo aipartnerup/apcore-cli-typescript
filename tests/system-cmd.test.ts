@@ -248,7 +248,11 @@ describe("per-subcommand behavioral parity", () => {
     expect(call!.input).toMatchObject({ module_id: "mymod", reason: "bugfix" });
   });
 
-  it("config get calls system.config.get", async () => {
+  it("config get reads Config directly, NOT via executor (D10-005)", async () => {
+    // Spec (usability-enhancements.md): `config get` calls Config.get(key)
+    // directly (read-only, no approval, no executor round-trip), matching
+    // apcore-cli-python `Config().get(key)`. It must NOT route through
+    // executor.call("system.config.get").
     const { registerConfigCommand } = await import("../src/system-cmd.js");
     const { executor, state } = makeExecutor({
       responses: { "system.config.get": { value: 42 } },
@@ -256,9 +260,11 @@ describe("per-subcommand behavioral parity", () => {
     const apcliGroup = new Command("apcli").exitOverride();
     registerConfigCommand(apcliGroup, executor);
     await apcliGroup.parseAsync(["config", "get", "foo.bar", "--format", "json"], { from: "user" });
+    // The executor must NOT be consulted for a read.
     const call = state.calls.find((c) => c.moduleId === "system.config.get");
-    expect(call).toBeDefined();
-    expect(call!.input).toMatchObject({ key: "foo.bar" });
+    expect(call).toBeUndefined();
+    // Output is still emitted for the requested key.
+    expect(stdoutSpy).toHaveBeenCalled();
   });
 
   it("config set calls system.control.update_config with parsed value", async () => {

@@ -12,8 +12,8 @@ importers:
         specifier: ^0.34.0
         version: 0.34.48
       apcore-js:
-        specifier: '>=0.21.0'
-        version: 0.21.0
+        specifier: '>=0.22.0'
+        version: 0.22.0
       commander:
         specifier: ^12.0.0
         version: 12.1.0
@@ -37,8 +37,8 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(vitest@2.1.9(@types/node@20.19.37))
       apcore-toolkit:
-        specifier: ^0.7.0
-        version: 0.7.0(@sinclair/typebox@0.34.48)
+        specifier: ^0.8.0
+        version: 0.8.0(@sinclair/typebox@0.34.48)
       apdev-js:
         specifier: ^0.2.4
         version: 0.2.4(typescript@5.9.3)
@@ -738,12 +738,12 @@ packages:
   any-promise@1.3.0:
     resolution: {integrity: sha512-7UvmKalWRt1wgjL1RrGxoSJW/0QZFIegpeGvZG9kjp8vrRu55XTHbwnqq2GpXm9uLbcuhxm3IqX9OB4MZR1b2A==}
 
-  apcore-js@0.21.0:
-    resolution: {integrity: sha512-Ef+hWxuvTZG+iqLLP0difTHzJmOIWxhlf28mWdELP5FkeNsdCr2ZjBhjPy+EPiqGFk4WkgsdvDHAvpoYnh9Qcg==}
-    engines: {node: '>=18.0.0'}
+  apcore-js@0.22.0:
+    resolution: {integrity: sha512-gjnK2CtvSPrJQBYqZ18xx9vdM492UFNL6HF/3fS40xRFdHHkOAfgdjS++bJ30Xc/VqlhWKLbkpdOfdZEZNMiWQ==}
+    engines: {node: '>=20.0.0'}
 
-  apcore-toolkit@0.7.0:
-    resolution: {integrity: sha512-FCJl/wqOoXfHhDVtU1zdxG0MJRG8DC2C1o9X69VOq7rCFZ/aRJOF9DZ0BeQ54IveZDfHr/UTCxdqkk8gwrK3pQ==}
+  apcore-toolkit@0.8.0:
+    resolution: {integrity: sha512-YPkcMTA2DE9MjVToWhZP6gkuVkoLhN7dLDC4j4JCKaLTv8XzvFSmjV/kHnq2TuedadVGi0qxooJXiqjUKQsCag==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@sinclair/typebox': '>=0.31.0'
@@ -1966,17 +1966,17 @@ snapshots:
 
   any-promise@1.3.0: {}
 
-  apcore-js@0.21.0:
+  apcore-js@0.22.0:
     dependencies:
       '@sinclair/typebox': 0.34.48
       js-yaml: 4.1.1
       uuid: 11.1.0
 
-  apcore-toolkit@0.7.0(@sinclair/typebox@0.34.48):
+  apcore-toolkit@0.8.0(@sinclair/typebox@0.34.48):
     dependencies:
       '@sinclair/typebox': 0.34.48
       ajv: 8.20.0
-      apcore-js: 0.21.0
+      apcore-js: 0.22.0
       js-yaml: 4.1.1
 
   apdev-js@0.2.4(typescript@5.9.3):
