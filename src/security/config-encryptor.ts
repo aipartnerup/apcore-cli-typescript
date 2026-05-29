@@ -23,7 +23,6 @@ let keytarModule: any = null; // eslint-disable-line @typescript-eslint/no-expli
 async function getKeytar(): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
   if (keytarModule) return keytarModule;
   try {
-    // @ts-expect-error — keytar is an optional peer dependency
     keytarModule = await import("keytar");
     return keytarModule;
   } catch {
@@ -88,7 +87,7 @@ export class ConfigEncryptor {
         const detail = err instanceof Error ? err.message : String(err);
         throw new ConfigDecryptionError(
           `Failed to store '${key}' in OS keyring: ${detail}. ` +
-            `Unset APCORE_CLI_CONFIG_PASSPHRASE-aware backends or unlock the keyring before retrying.`,
+          `Unset APCORE_CLI_CONFIG_PASSPHRASE-aware backends or unlock the keyring before retrying.`,
         );
       }
     }
@@ -172,10 +171,10 @@ export class ConfigEncryptor {
     if (!ConfigEncryptor.weakFallbackWarned) {
       logWarn(
         "APCORE_CLI_CONFIG_PASSPHRASE is not set. The `enc:v2:` fallback uses a key " +
-          "derived from hostname+username (non-secret inputs) and is OBFUSCATION " +
-          "ONLY — an attacker with filesystem read access can reconstruct the key. " +
-          "Set APCORE_CLI_CONFIG_PASSPHRASE or ensure the OS keyring is available " +
-          "for real encryption.",
+        "derived from hostname+username (non-secret inputs) and is OBFUSCATION " +
+        "ONLY — an attacker with filesystem read access can reconstruct the key. " +
+        "Set APCORE_CLI_CONFIG_PASSPHRASE or ensure the OS keyring is available " +
+        "for real encryption.",
       );
       ConfigEncryptor.weakFallbackWarned = true;
     }
