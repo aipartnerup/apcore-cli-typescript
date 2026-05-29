@@ -10,4 +10,5 @@ export default defineConfig({
   outDir: "dist",
   splitting: false,
   shims: true,
+  external: ["keytar"],
 });
