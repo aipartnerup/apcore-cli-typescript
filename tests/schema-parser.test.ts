@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { schemaToCliOptions, mapType, extractHelp } from "../src/schema-parser.js";
 import { reconvertEnumValues } from "../src/main.js";
+import * as logger from "../src/logger.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -42,6 +43,31 @@ describe("mapType()", () => {
 
   it("defaults to string when type is missing", () => {
     expect(mapType("foo", {})).toBe("string");
+  });
+
+  // Cross-SDK parity (D11-02): TS must emit a warning on missing/unknown type
+  // like Python (_map_type) and Rust (map_type), not swallow it silently.
+  it("warns when type is missing, then defaults to string", () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    expect(mapType("foo", {})).toBe("string");
+    expect(warnSpy).toHaveBeenCalledWith(
+      "No type specified for property 'foo', defaulting to string.",
+    );
+  });
+
+  it("warns when schema type is unknown, then defaults to string", () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    expect(mapType("foo", { type: "unknown_type" })).toBe("string");
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Unknown schema type 'unknown_type' for property 'foo', defaulting to string.",
+    );
+  });
+
+  it("does not warn for the object/array string aliases", () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    expect(mapType("data", { type: "object" })).toBe("string");
+    expect(mapType("items", { type: "array" })).toBe("string");
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it("detects file convention (_file suffix)", () => {

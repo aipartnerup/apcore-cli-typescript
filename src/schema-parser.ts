@@ -40,11 +40,23 @@ export function mapType(propName: string, propSchema: Record<string, unknown>): 
     array: "string",
   };
 
+  // Cross-SDK parity (D11-02): warn on a missing or unknown schema type before
+  // defaulting to string, mirroring Python schema_parser._map_type and Rust
+  // schema_parser::map_type. Without this the TS SDK silently swallows a
+  // typo'd or absent `type`, giving operators no diagnostic.
   if (!schemaType) {
+    logWarn(`No type specified for property '${propName}', defaulting to string.`);
     return "string";
   }
 
-  return typeMap[schemaType] ?? "string";
+  const mapped = typeMap[schemaType];
+  if (mapped === undefined) {
+    logWarn(
+      `Unknown schema type '${schemaType}' for property '${propName}', defaulting to string.`,
+    );
+    return "string";
+  }
+  return mapped;
 }
 
 /**
