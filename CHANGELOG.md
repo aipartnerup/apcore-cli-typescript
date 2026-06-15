@@ -5,6 +5,35 @@ All notable changes to apcore-cli (TypeScript SDK) will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-06-15
+
+### Changed
+
+- **Required runtime bumped to apcore-js 0.24.0 and apcore-toolkit 0.8.1.** Peer
+  dependency floors in `package.json` raised from `apcore-js>=0.22.0` /
+  `apcore-toolkit>=0.8.0` to `apcore-js>=0.24.0` / `apcore-toolkit>=0.8.1` (and the
+  `apcore-toolkit` devDependency to `^0.8.1`), tracking the aligned apcore 0.24.0 and
+  apcore-toolkit 0.8.1 releases. **No source changes** — the full test suite passes
+  unchanged.
+
+  The apcore-js 0.22.0 → 0.24.0 delta does not touch any surface the CLI consumes:
+  - **Error `details` key casing camelCase → snake_case (A-D-019)** scopes only the
+    *inner* `details` keys of `CALL_DEPTH_EXCEEDED` / `CIRCULAR_CALL` /
+    `CALL_FREQUENCY_EXCEEDED` (`maxDepth` → `max_depth`, etc.). The CLI's error
+    serialization in `main.ts` reads top-level fields (`details`, `suggestion`,
+    `ai_guidance`, `retryable`, `user_fixable`) and forwards `details` verbatim — it
+    never references the inner keys, and the public TS getters (`maxDepth`, …) are
+    unchanged. Transparent pass-through; no golden tests pin the shape.
+  - **Per-instance `ToggleState` isolation (#71)** — the CLI never constructs
+    `ToggleState`/`APCore` nor calls `isModuleDisabled()`.
+  - The CLI's internal `Registry` / `Executor` / `ModuleDescriptor` mirror interfaces
+    in `src/cli.ts` (`list(): string[]`, `getDefinition()`, `call()`,
+    `moduleId`, `name: string | null`) still match apcore-js 0.24.0 exactly.
+  - Out of scope and unused by the CLI: `Registry.unregister()` drain fix (A-D-001),
+    array redaction (A-D-003), `Config` env coercion (A-D-008), middleware
+    `on_error` (A-D-011), ACL `removeRule(null)` (A-D-016), `CircuitBreakerMiddleware`,
+    `A2ASubscriber`, DLQ, `EventEmitter`.
+
 ## [0.10.0] - 2026-05-18
 
 ### Changed — BREAKING
