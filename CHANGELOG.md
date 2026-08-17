@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.10.5] - 2026-08-17
+
+Patch release. Bumps the required `apcore-js` floor to `0.27.0` to track the aligned apcore 0.27.0 release (2026-08-14). **No source changes** — the full test suite (653 tests across 30 files) plus `tsc --noEmit` and `build` pass unchanged against apcore-js 0.27.0.
+
+The apcore-js 0.26.0 → 0.27.0 delta is BREAKING at the spec level, but touches no surface the CLI consumes — verified against the release notes and the actual call sites:
+
+- **Middleware semantics** — `beforeStep` failure is now terminal/non-recoverable, `afterStep` fires after a recovered step body. The CLI never constructs or configures middleware or pipelines; it only consumes injected `registry` / `executor` objects and introspects `describePipeline` / `currentStrategy.steps` (read-only). No exposure.
+- **ACL-failed `validate()` introspection** — a failed `acl` check now withholds `module_preflight` / `module_preview` checks and `predictedChanges`. The CLI's `--dry-run` / `apcli validate` consume `PreflightResult.valid` / `checks` / `requiresApproval` (never `predictedChanges`); `--dry-run --trace` prints a hardcoded preset step list, not SDK data. ACL-denied results still map to exit 77 via the hardcoded check-name map in `output.ts` (acl→77) or the `ACL_DENIED` error code. No code change needed.
+- **`Registry.register` metadata `dependencies` persistence** — the CLI never calls `register`; registration runs via the SDK's `discover()` (sandbox runner) or host-injected registries. The `--deps` column reads top-level `dependencies` (already always-empty in 0.26.0); 0.27.0 persistence under metadata does not regress it. No exposure.
+- **Schema conversion (A23)** — object detection, nullable `anyOf` wrapping, sorted `required` are SDK-conversion rules. The CLI runs its **own** schema→Commander converter (`schema-parser.ts` / `ref-resolver.ts`) on the descriptor's `inputSchema`; `required` is order-insensitive. Nullable `{anyOf:[orig,{type:null}]}` properties fall to the "no type → string + warning" path — a behavior nuance, not a break (matches v0.10.3's Python-side fix).
+- **`pipeline.configure` 4-field set / `requires`/`provides` non-configurable** — the CLI never configures pipelines; a host config carrying other keys now fails at load (spec-mandated strictness, upstream concern). `Config.get(key)` used by `apcli config get` is unaffected — required-field validation applies to the load/validate path, which the CLI never invokes.
+- **No type coercion at the module boundary** — the CLI already performs its own coercion (Commander `parseArg`, `reconvertEnumValues`) before `executor.execute`, so CLI-passed values are typed already.
+- **Removed root exports** — `CTX_TRACING_SPAN_ID`, `OtelTracer`, `OtelSpan`, `TracingMiddlewareOptions` are no longer exported from `apcore-js` 0.27.0 — none imported by this CLI. (`ExecutionPolicy.fromObject` boolean strictness is host-side.)
+
 ## [0.10.4] - 2026-07-14
 
 Patch release. Bumps the required `apcore-js` floor to `0.26.0` to align the ecosystem on the 0.26.0 governance layer (additive, no breaking changes). No code or API changes.
