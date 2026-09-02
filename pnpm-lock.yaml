@@ -12,8 +12,8 @@ importers:
         specifier: ^0.34.0
         version: 0.34.48
       apcore-js:
-        specifier: '>=0.27.0'
-        version: 0.27.0
+        specifier: '>=0.28.0'
+        version: 0.28.0
       commander:
         specifier: ^12.0.0
         version: 12.1.0
@@ -37,8 +37,8 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(vitest@2.1.9(@types/node@20.19.37))
       apcore-toolkit:
-        specifier: ^0.10.0
-        version: 0.10.0(@sinclair/typebox@0.34.48)
+        specifier: ^0.10.2
+        version: 0.10.2(@sinclair/typebox@0.34.48)
       apdev-js:
         specifier: ^0.2.4
         version: 0.2.4(typescript@5.9.3)
@@ -742,12 +742,12 @@ packages:
   any-promise@1.3.0:
     resolution: {integrity: sha512-7UvmKalWRt1wgjL1RrGxoSJW/0QZFIegpeGvZG9kjp8vrRu55XTHbwnqq2GpXm9uLbcuhxm3IqX9OB4MZR1b2A==}
 
-  apcore-js@0.27.0:
-    resolution: {integrity: sha512-Q3O3Ef2+2to7Z9wjsMjoDQ37FSityUX8EiWUVITqDxLp4qDFTMDq+9n9NuydHhWhHoyXZ5mG9Xt4yZPIwcTQIQ==}
+  apcore-js@0.28.0:
+    resolution: {integrity: sha512-hqZh+ywoe8Wyu5StFDcp/mNZVFZZRbQMiuLlkeATiy2wacQ58oa3bor+X0QyoeRma3qF3lr+qEqQLau2KRxj0w==}
     engines: {node: '>=20.0.0'}
 
-  apcore-toolkit@0.10.0:
-    resolution: {integrity: sha512-Q1cs0Eizh63GgsxtdGd3e7Hqaqf1SjdvYYVLVNc2Q/gW5SegHHz5BWXBtnz6pxuZnk4nBW5aB9wtLLVExNpZ8w==}
+  apcore-toolkit@0.10.2:
+    resolution: {integrity: sha512-9h9MmsefHxEHKjgsHuip8TZ+MeOQWQeU9Ck+W/RBWtcIXPMKa7q2S3u7ifFEpwD8Oa98qttjbkGEhB5jLRaASA==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@sinclair/typebox': '>=0.31.0'
@@ -2091,17 +2091,17 @@ snapshots:
 
   any-promise@1.3.0: {}
 
-  apcore-js@0.27.0:
+  apcore-js@0.28.0:
     dependencies:
       '@sinclair/typebox': 0.34.48
       js-yaml: 4.1.1
       uuid: 11.1.0
 
-  apcore-toolkit@0.10.0(@sinclair/typebox@0.34.48):
+  apcore-toolkit@0.10.2(@sinclair/typebox@0.34.48):
     dependencies:
       '@sinclair/typebox': 0.34.48
       ajv: 8.20.0
-      apcore-js: 0.27.0
+      apcore-js: 0.28.0
       js-yaml: 4.1.1
 
   apdev-js@0.2.4(typescript@5.9.3):

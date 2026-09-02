@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.11.0] - 2026-09-02
+
+Bumps the required `apcore-js` floor to `0.28.0` and `apcore-toolkit` to `0.10.2` to track the aligned apcore 0.28.0 release (2026-08-31). One display fix (see Fixed) plus new regression tests take the suite from 653 to 661; `tsc --noEmit` and `eslint` pass unchanged. The argument-scoped approval path was verified end-to-end against the 0.28.0 runtime rather than inferred from the release notes.
+
+**Why a minor rather than a patch.** This SDK needed no correctness fix of its own, but the three CLI SDKs ship as one version line, and the `apcli health` summary output changes here too. Version-locking them is what keeps the compatibility table and the cross-SDK conformance fixtures meaningful; see apcore-cli-python 0.11.0 for the changes that set the bump.
+
+### Changed
+
+- **`apcore-js>=0.28.0`, `apcore-toolkit>=0.10.2`** (peer and dev dependencies). apcore-toolkit 0.10.2 is a dependency-tracking release with no source change.
+
+### Fixed
+
+- **The `apcli health` summary line reported "no data" for a project whose modules it had just listed.** apcore classifies module health in **four** tiers — `healthy` / `degraded` / `error` / `unknown` — and the tally iterated only the first three. `unknown` means "no calls recorded yet", which is the state every module in a fresh project is in, so the common case rendered a populated table above a total that denied it:
+
+  ```
+    probe.echo                   unknown      0.0%         --
+  Summary: no data
+  ```
+
+  **Pre-existing, and not introduced by this upgrade** — all three SDKs have emitted `unknown` since the tier set existed. apcore 0.28.0 is what brought it into focus: `sys-health-summary.schema.json` had declared the enum as `["healthy", "degraded", "unhealthy"]`, a value **no SDK emits**, and the release corrects it to the four tiers actually produced, splitting the summary's `unhealthy` count field into `error` and `unknown`. With the canonical shape finally naming four tiers, rendering three is a plain omission. Fixed in all three SDKs together, with the tally now covering `unknown`; a genuinely empty tally still reads "no data".
+
+### Added
+
+- **`tests/acl-argument-scoped-approval.test.ts` (4 cases)** pins the cross-SDK contract that an ACL-sourced approval requirement reaches `CliApprovalHandler`. Three cases assert the happy path and the `validate()` union; the fourth is the discriminating one — with auto-approve off and no TTY the handler refuses, so the ungated call must still succeed while the `--force` call must reject. Without that pair a gate that never fired would pass the suite.
+
+- **Exit-code map parity pinned across the three SDKs.** A mechanical three-way diff of the maps found `DEPENDENCY_NOT_FOUND` and `DEPENDENCY_VERSION_MISMATCH` mapped to 44 here and in the other non-Rust SDK, but falling through to 1 in apcore-cli-rust (fixed in its 0.11.0). Both codes now carry an explicit assertion here too, so the three maps cannot drift again without a test going red.
+
+### Notes
+
+- **The one 0.28.0 change that reaches this SDK works correctly and needed no code.** Spec v1.28.0 §6.9 makes the approval gate fire on the union of three sources, so an ACL rule carrying `approval: required` (§6.1.6) now routes calls to modules annotated `requiresApproval: false` through `CliApprovalHandler`. Verified against the runtime with a `git.push` module annotated `requiresApproval: false` behind an `arguments: { has_key: ["force"] }` approval rule: the plain call ran ungated, `--force` reached the handler, and `executor.validate()` reported `requiresApproval` as `false` and `true` respectively. `CliApprovalHandler.requestApproval` returns a plain object, which `ApprovalResult` accepts because it is a structurally-typed interface — apcore-cli-python returned the same shape against a dataclass and had to be fixed in its 0.11.0.
+
+  `requestApproval`'s two defensive short-circuits (`request.requires_approval === false`, `request.module_def?.annotations?.requires_approval === false`) stay inert against a real `ApprovalRequest`: the interface carries neither field, and §7.3's "`requiresApproval` is guaranteed true" now holds for an ACL-sourced requirement too — `builtin-steps.ts` rewrites the annotation before constructing the request.
+
+- **What the 0.27.0 → 0.28.0 delta does *not* touch.** The CLI never constructs or loads an `ACL`, never calls `check()` / `checkAccess()` (so §6.8.1's fail-closed legacy boolean does not reach it), never reads an `AuditEntry`, and never builds an `ACLRule` (so §6.1.5's `effect` value closure and the new `approval` field are inert here). `ExecutionPolicy.resolve()`'s new optional `PolicyCallSite` parameter is additive and the CLI configures no policy. `p99_latency_ms` is display-only in `formatUsageSummaryTty`.
+
+- **`system.usage.*` now rejects a malformed `--period` at the schema boundary.** `inputSchema` declares `pattern: '^[1-9][0-9]*[hd]$'`, so `apcli usage --period 0h` — passed through verbatim, as it always was — now fails with `SCHEMA_VALIDATION_ERROR` instead of `parsePeriod` throwing a plain `Error` from inside `execute()`. `exitCodeForError` already reads the wire code, so the exit code is 45 either way; only the message changes. The accepted set is unchanged.
+
+- **`Executor.validate()` now reports the governance-effective requirement (§7.9.5)**, so `apcli validate` and the `--dry-run` path — which forward `result.requiresApproval` verbatim — correctly report a call gated only by an ACL argument-scoped rule.
+
 ## [0.10.5] - 2026-08-17
 
 Patch release. Bumps the required `apcore-js` floor to `0.27.0` to track the aligned apcore 0.27.0 release (2026-08-14). **No source changes** — the full test suite (653 tests across 30 files) plus `tsc --noEmit` and `build` pass unchanged against apcore-js 0.27.0.

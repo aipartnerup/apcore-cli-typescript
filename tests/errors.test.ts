@@ -103,6 +103,16 @@ describe("exitCodeForError", () => {
     expect(exitCodeForError(new ModuleNotFoundError())).toBe(EXIT_CODES.MODULE_NOT_FOUND);
   });
 
+  it("maps both dependency wire codes to 44 (cross-SDK parity)", () => {
+    // apcore-cli-rust reached its catch-all arm for these and exited 1 until
+    // the same release; pinned here so the three maps cannot drift again.
+    const dependencyNotFound = Object.assign(new Error("dep"), { code: "DEPENDENCY_NOT_FOUND" });
+    const versionMismatch = Object.assign(new Error("dep"), { code: "DEPENDENCY_VERSION_MISMATCH" });
+
+    expect(exitCodeForError(dependencyNotFound)).toBe(44);
+    expect(exitCodeForError(versionMismatch)).toBe(44);
+  });
+
   it("maps error with apcore code property", () => {
     const err = Object.assign(new Error("test"), { code: "ACL_DENIED" });
     expect(exitCodeForError(err)).toBe(EXIT_CODES.ACL_DENIED);

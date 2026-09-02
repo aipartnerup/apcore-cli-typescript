@@ -489,3 +489,81 @@ describe("client-side approval gate (D11-B-001)", () => {
     expect(state.calls.find((c) => c.moduleId === "system.control.toggle_feature")).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Health summary tier coverage
+// ---------------------------------------------------------------------------
+
+describe("health summary covers all four tiers", () => {
+  /**
+   * apcore classifies modules as healthy / degraded / error / **unknown**, and
+   * `unknown` ("no calls recorded yet") is the state every module in a fresh
+   * project is in. Iterating only the first three made the summary line
+   * contradict the table printed directly above it — the rows listed modules
+   * while the total read "no data". apcore >= 0.28.0 declares the four-tier
+   * set canonically in `sys-health-summary.schema.json`; the SDKs emitted
+   * `unknown` all along.
+   */
+  async function renderHealth(summary: Record<string, number>): Promise<string> {
+    const { registerHealthCommand } = await import("../src/system-cmd.js");
+    const { executor } = makeExecutor({
+      responses: {
+        "system.health.summary": {
+          summary,
+          modules: [
+            { module_id: "probe.echo", status: "unknown", error_rate: 0, top_error: null },
+          ],
+        },
+      },
+    });
+    // The TTY branch is the one that renders the tally; the non-TTY default
+    // set in beforeEach routes to JSON instead.
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+
+    const apcliGroup = new Command("apcli");
+    registerHealthCommand(apcliGroup, executor);
+    await apcliGroup.parseAsync(["health", "--all"], { from: "user" });
+
+    return stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+  }
+
+  it("reports an unknown-only project instead of 'no data'", async () => {
+    const out = await renderHealth({
+      total_modules: 1,
+      healthy: 0,
+      degraded: 0,
+      error: 0,
+      unknown: 1,
+    });
+
+    expect(out).toContain("Summary: 1 unknown");
+    expect(out).not.toContain("no data");
+  });
+
+  it("reports all four tiers", async () => {
+    const out = await renderHealth({
+      total_modules: 10,
+      healthy: 4,
+      degraded: 3,
+      error: 2,
+      unknown: 1,
+    });
+
+    expect(out).toContain("4 healthy");
+    expect(out).toContain("3 degraded");
+    expect(out).toContain("2 error");
+    expect(out).toContain("1 unknown");
+  });
+
+  it("still says 'no data' when the tally is genuinely empty", async () => {
+    const out = await renderHealth({
+      total_modules: 0,
+      healthy: 0,
+      degraded: 0,
+      error: 0,
+      unknown: 0,
+    });
+
+    expect(out).toContain("no data");
+  });
+});

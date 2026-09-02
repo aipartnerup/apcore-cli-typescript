@@ -115,8 +115,15 @@ function formatHealthSummaryTty(result: Record<string, unknown>): void {
     );
   }
 
+  // The health tiers are healthy / degraded / error / unknown — four, not
+  // three. `unknown` means "no calls recorded yet", which is the state every
+  // module in a fresh project is in, so omitting it made the summary line
+  // contradict the table right above it: the rows listed modules while the
+  // total read "no data". apcore >= 0.28.0 declares the four-tier set
+  // canonically in sys-health-summary.schema.json (§6.6); the SDKs have
+  // emitted `unknown` all along.
   const parts: string[] = [];
-  for (const key of ["healthy", "degraded", "error"]) {
+  for (const key of ["healthy", "degraded", "error", "unknown"]) {
     const count = summary[key] as number | undefined;
     if (count) parts.push(`${count} ${key}`);
   }
