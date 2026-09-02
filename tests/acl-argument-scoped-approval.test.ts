@@ -101,17 +101,34 @@ describe("ACL argument-scoped approval reaches CliApprovalHandler", () => {
     expect(forced.requiresApproval).toBe(true);
   });
 
-  it("lets a refusing handler block only the ACL-matched call", async () => {
-    // The discriminating pair: if the gate did not fire, or fired but never
-    // reached this handler, both calls would succeed.
-    const executor = appWithArgumentScopedRule(/*autoApprove*/ false);
+  it("consults a refusing handler only for the ACL-matched call", async () => {
+    // The discriminating case. Deliberately uses a stub rather than
+    // `CliApprovalHandler` with auto-approve off: that handler's refusal
+    // depends on `process.stdin.isTTY` being falsy, which holds in a vitest
+    // worker and stops holding in configurations that run tests on the main
+    // thread with a terminal attached. The stub removes the ambient dependency
+    // and lets the test assert the stronger property directly — that the gate
+    // *consulted a handler at all*, and for which call.
+    const seen: string[] = [];
+    const executor = appWithArgumentScopedRule(/*autoApprove*/ true);
+    executor.setApprovalHandler({
+      async requestApproval(request: { moduleId: string; arguments: Record<string, unknown> }) {
+        seen.push(`${request.moduleId}(${Object.keys(request.arguments).sort().join(",")})`);
+        return { status: "rejected", reason: "refused by the test handler" };
+      },
+      async checkApproval() {
+        return { status: "rejected" };
+      },
+    });
 
     await expect(
       executor.call("git.push", { remote: "origin" }),
     ).resolves.toEqual({ pushed: true, force: false });
+    expect(seen).toEqual([]);
 
     await expect(
       executor.call("git.push", { remote: "origin", force: true }),
     ).rejects.toThrow();
+    expect(seen).toEqual(["git.push(force,remote)"]);
   });
 });
