@@ -46,6 +46,7 @@
     "@typescript-eslint/eslint-plugin": "^8.59.0",
     "@typescript-eslint/parser": "^8.59.0",
     "@vitest/coverage-v8": "^2.0.0",
+    "apcore-js": "^0.28.0",
     "apcore-toolkit": "^0.10.2",
     "apdev-js": "^0.2.4",
     "eslint": "^10.2.1",

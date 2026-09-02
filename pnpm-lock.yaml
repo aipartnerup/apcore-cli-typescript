@@ -11,9 +11,6 @@ importers:
       '@sinclair/typebox':
         specifier: ^0.34.0
         version: 0.34.48
-      apcore-js:
-        specifier: '>=0.28.0'
-        version: 0.28.0
       commander:
         specifier: ^12.0.0
         version: 12.1.0
@@ -36,6 +33,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^2.0.0
         version: 2.1.9(vitest@2.1.9(@types/node@20.19.37))
+      apcore-js:
+        specifier: ^0.28.0
+        version: 0.28.0
       apcore-toolkit:
         specifier: ^0.10.2
         version: 0.10.2(@sinclair/typebox@0.34.48)
