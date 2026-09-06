@@ -8,6 +8,25 @@ import * as path from "node:path";
 import { EXIT_CODES } from "./errors.js";
 
 /**
+ * Refuse to overwrite an existing scaffold file unless `--force` was passed.
+ *
+ * Re-running `init module` against a hand-edited scaffold file must not
+ * silently clobber it — Python's `_refuse_if_exists` / Rust's
+ * `guard_overwrite` both guard the same three writes. Exits with
+ * INVALID_CLI_INPUT (2): this is a usage conflict (the user needs to pass
+ * `--force` or pick a different `--dir`), not a runtime fs failure, which is
+ * `runFsOp`'s job.
+ */
+function guardOverwrite(filepath: string, force: boolean): void {
+  if (!force && fs.existsSync(filepath)) {
+    process.stderr.write(
+      `Error: '${filepath}' already exists. Pass -f/--force to overwrite.\n`,
+    );
+    process.exit(EXIT_CODES.INVALID_CLI_INPUT);
+  }
+}
+
+/**
  * Wrap a filesystem operation and exit with MODULE_EXECUTE_ERROR on failure.
  * Unwrapped mkdirSync/writeFileSync would surface raw Node stack traces to the
  * user; this helper funnels them through the CLI's standard stderr/exit path.
@@ -97,7 +116,8 @@ export function registerInitCommand(cli: Command): void {
     )
     .option("--dir <path>", "Output directory. Default: extensions/ or commands/.")
     .option("-d, --description <text>", "Module description.", "TODO: add description")
-    .action((moduleId: string, opts: { style: string; dir?: string; description: string }) => {
+    .option("-f, --force", "Overwrite existing files. Without this flag, init refuses to clobber.", false)
+    .action((moduleId: string, opts: { style: string; dir?: string; description: string; force: boolean }) => {
       // Parse module_id into parts
       const lastDot = moduleId.lastIndexOf(".");
       const prefix = lastDot >= 0 ? moduleId.substring(0, lastDot) : moduleId;
@@ -115,13 +135,13 @@ export function registerInitCommand(cli: Command): void {
 
       switch (style) {
         case "decorator":
-          createDecoratorModule(moduleId, prefix, funcName, description, dir);
+          createDecoratorModule(moduleId, prefix, funcName, description, dir, opts.force);
           break;
         case "convention":
-          createConventionModule(moduleId, prefix, funcName, description, dir);
+          createConventionModule(moduleId, prefix, funcName, description, dir, opts.force);
           break;
         case "binding":
-          createBindingModule(moduleId, prefix, funcName, description, dir);
+          createBindingModule(moduleId, prefix, funcName, description, dir, opts.force);
           break;
         default:
           process.stderr.write(`Error: Unknown style '${style}'\n`);
@@ -136,10 +156,12 @@ function createDecoratorModule(
   funcName: string,
   description: string,
   outputDir: string,
+  force: boolean,
 ): void {
   runFsOp("create directory", outputDir, () => fs.mkdirSync(outputDir, { recursive: true }));
   const filename = moduleId.replace(/\./g, "_") + ".ts";
   const filepath = path.join(outputDir, filename);
+  guardOverwrite(filepath, force);
 
   const varName = funcName + "Module";
   const content = renderTemplate(DECORATOR_TEMPLATE, {
@@ -158,6 +180,7 @@ function createConventionModule(
   funcName: string,
   description: string,
   outputDir: string,
+  force: boolean,
 ): void {
   // If prefix has dots, create subdirectories
   const prefixParts = prefix.split(".");
@@ -177,6 +200,7 @@ function createConventionModule(
     filename = prefix + ".ts";
   }
   const filepath = path.join(dirPath, filename);
+  guardOverwrite(filepath, force);
 
   const cliGroupLine = moduleId.includes(".")
     ? `export const CLI_GROUP = "${prefixParts[0]}";\n`
@@ -197,12 +221,14 @@ function createBindingModule(
   funcName: string,
   description: string,
   outputDir: string,
+  force: boolean,
 ): void {
   const partial: string[] = [];
   runFsOp("create directory", outputDir, () => fs.mkdirSync(outputDir, { recursive: true }));
 
   const yamlFile = path.join(outputDir, moduleId.replace(/\./g, "_") + ".binding.yaml");
   const target = `commands.${prefix}:${funcName}`;
+  guardOverwrite(yamlFile, force);
 
   const yamlContent = renderTemplate(BINDING_TEMPLATE, {
     moduleId,

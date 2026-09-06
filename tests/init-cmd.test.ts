@@ -145,6 +145,90 @@ describe("init module command", () => {
     expect(content).not.toContain("CLI_GROUP");
   });
 
+  // --- init module --force guard regression ---
+  it("decorator style without --force refuses to overwrite an existing file", () => {
+    const cli = makeCli();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => { throw new Error("EXIT"); }) as never;
+
+    // First run creates the scaffold file.
+    cli.parse(["node", "test", "init", "module", "ops.deploy", "--style", "decorator", "--dir", tmpDir]);
+    const pyFiles = findFiles(tmpDir, ".ts");
+    expect(pyFiles.length).toBe(1);
+    fs.writeFileSync(pyFiles[0], "HAND-EDITED CONTENT\n");
+
+    // Re-running without --force must refuse, not clobber.
+    const cli2 = makeCli();
+    expect(() => cli2.parse([
+      "node", "test", "init", "module", "ops.deploy", "--style", "decorator", "--dir", tmpDir,
+    ])).toThrow("EXIT");
+    expect(exitSpy).toHaveBeenCalledWith(2); // EXIT_CODES.INVALID_CLI_INPUT
+    expect(fs.readFileSync(pyFiles[0], "utf-8")).toBe("HAND-EDITED CONTENT\n");
+    const msg = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(msg).toMatch(/already exists/);
+  });
+
+  it("decorator style with --force overwrites the existing file", () => {
+    const cli = makeCli();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    cli.parse(["node", "test", "init", "module", "ops.deploy", "--style", "decorator", "--dir", tmpDir]);
+    const pyFiles = findFiles(tmpDir, ".ts");
+    fs.writeFileSync(pyFiles[0], "HAND-EDITED CONTENT\n");
+
+    const cli2 = makeCli();
+    cli2.parse([
+      "node", "test", "init", "module", "ops.deploy", "--style", "decorator", "--dir", tmpDir, "--force",
+    ]);
+    const content = fs.readFileSync(pyFiles[0], "utf-8");
+    expect(content).not.toBe("HAND-EDITED CONTENT\n");
+    expect(content).toContain("module(");
+  });
+
+  it("convention style without --force refuses to overwrite an existing file", () => {
+    const cli = makeCli();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => { throw new Error("EXIT"); }) as never;
+
+    cli.parse(["node", "test", "init", "module", "ops.deploy", "--dir", tmpDir]);
+    const pyFiles = findFiles(tmpDir, ".ts");
+    fs.writeFileSync(pyFiles[0], "HAND-EDITED CONTENT\n");
+
+    const cli2 = makeCli();
+    expect(() => cli2.parse([
+      "node", "test", "init", "module", "ops.deploy", "--dir", tmpDir,
+    ])).toThrow("EXIT");
+    expect(exitSpy).toHaveBeenCalledWith(2);
+    expect(fs.readFileSync(pyFiles[0], "utf-8")).toBe("HAND-EDITED CONTENT\n");
+  });
+
+  it("binding style without --force refuses to overwrite the existing binding.yaml", () => {
+    const cli = makeCli();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => { throw new Error("EXIT"); }) as never;
+
+    cli.parse(["node", "test", "init", "module", "ops.deploy", "--style", "binding", "--dir", tmpDir]);
+    const yamlFiles = findFiles(tmpDir, ".yaml");
+    fs.writeFileSync(yamlFiles[0], "HAND-EDITED CONTENT\n");
+
+    const cli2 = makeCli();
+    expect(() => cli2.parse([
+      "node", "test", "init", "module", "ops.deploy", "--style", "binding", "--dir", tmpDir,
+    ])).toThrow("EXIT");
+    expect(exitSpy).toHaveBeenCalledWith(2);
+    expect(fs.readFileSync(yamlFiles[0], "utf-8")).toBe("HAND-EDITED CONTENT\n");
+  });
+
   // --- W-21: fs-error handling regression ---
   it("fs write failure produces stderr error + exit code, not a raw Node stack", () => {
     const cli = makeCli();
