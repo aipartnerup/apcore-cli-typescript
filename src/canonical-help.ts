@@ -49,7 +49,11 @@ function optionTerm(opt: Option): string {
 function optionDescription(opt: Option): string {
   let desc = opt.description;
   const d = opt.defaultValue;
-  if (d !== undefined && d !== false && d !== "" && d !== null) {
+  // An empty array is the "collect into a list" default of a repeatable
+  // option. `String([])` is `""`, so without this case it renders as the
+  // meaningless `[default: ]` — the same reason `""` itself is filtered.
+  const isEmptyArray = Array.isArray(d) && d.length === 0;
+  if (d !== undefined && d !== false && d !== "" && d !== null && !isEmptyArray) {
     desc = `${desc} [default: ${String(d)}]`;
   }
   return desc;

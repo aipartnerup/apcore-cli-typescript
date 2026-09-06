@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 
+import { assertDelegatedAccess } from "../acl-loader.js";
 import type { Executor } from "../cli.js";
 import { ModuleExecutionError } from "../errors.js";
 
@@ -80,15 +81,38 @@ export class Sandbox {
 
   /**
    * Execute a module, optionally inside a sandboxed subprocess.
+   *
+   * @param context - Optional apcore `Context`, supplied by the CLI only when
+   *   the FE-14 identity flags asserted one. It cannot cross the subprocess
+   *   boundary, so the sandboxed path deliberately ignores it — a sandboxed
+   *   call presents no identity, which is the conservative reading.
    */
   async execute(
     moduleId: string,
     inputData: Record<string, unknown>,
     executor: Executor,
+    context?: unknown,
   ): Promise<unknown> {
     if (!this.enabled) {
-      return executor.call(moduleId, inputData);
+      // Arity is preserved when no identity was asserted: `call` is the
+      // executor's hot path and downstream doubles assert on its arguments,
+      // so a `undefined` third argument is not appended for the common case.
+      return context === undefined
+        ? executor.call(moduleId, inputData)
+        : executor.call(moduleId, inputData, context);
     }
+    // FE-14 §4.10 — the child builds a fresh Registry + Executor from
+    // APCORE_EXTENSIONS_ROOT and carries NO ACL, so the decision has to be
+    // reached here, in the parent, and BEFORE the spawn. Without this,
+    // `--sandbox` — a *security* flag — silently switches access control off.
+    //
+    // Deliberately at the delegation boundary rather than only at the CLI call
+    // sites: a caller that forgets to gate cannot reach a subprocess through
+    // this method. The call sites check too, one step earlier, because they
+    // must compose the ACL's approval requirement with the module annotation
+    // before the approval gate runs. `checkAccess` is pure, so evaluating it
+    // twice costs a decision and changes nothing.
+    assertDelegatedAccess(moduleId, inputData);
     return this._sandboxedExecute(moduleId, inputData);
   }
 
@@ -248,6 +272,12 @@ export async function runSandboxRunner(moduleId: string): Promise<void> {
     return;
   }
 
+  // No ACL is attached here, and that is deliberate: the PARENT reached the
+  // access decision before spawning this process (FE-14 §4.10,
+  // `assertDelegatedAccess`). A child re-loading `acl.root` would not be a
+  // trustworthy gate anyway — the sandbox forwards a narrow environment
+  // allowlist by design, so the child's view of the path is neither
+  // guaranteed nor under the parent's control.
   const registry = new apcore.Registry({ extensionsDir: extensionsRoot });
   await registry.discover();
   const executor = new apcore.Executor({ registry });

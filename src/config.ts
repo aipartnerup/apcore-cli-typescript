@@ -34,6 +34,24 @@ export const DEFAULTS: Record<string, unknown> = {
   "cli.approval_timeout": 60,
   "cli.strategy": "standard",
   "cli.group_depth": 1,
+  // ACL governance (FE-14 §5). `acl.root` is an APCORE-owned key — its
+  // environment override is `APCORE_ACL_ROOT`, not `APCORE_CLI_ACL_ROOT`,
+  // exactly as `extensions.root` is overridden by `APCORE_EXTENSIONS_ROOT`.
+  // A missing root attaches nothing; there is deliberately no
+  // `acl.enabled: false` kill switch (FE-14 §5, §7.3).
+  "acl.root": "./acl",
+  // Audit wiring (FE-14 §4.8). apcore emits one `AuditEntry` per
+  // `checkAccess()` call, but only through an `auditLogger` callback, and
+  // nothing in apcore wires these keys to one — the CLI is the consumer.
+  // Both keys are apcore-owned, so their environment overrides are
+  // `APCORE_ACL_*` and not `APCORE_CLI_ACL_*`, exactly like `acl.root`.
+  //
+  // `include_denied` governs DENIED decisions only, which is apcore's own
+  // meaning (`schemas/acl-config.schema.json`: "Whether to log denied access
+  // attempts"). It is NOT an inverted "quiet" switch: `false` still writes
+  // every allow decision.
+  "acl.audit.enabled": true,
+  "acl.audit.include_denied": true,
   // Exposure filtering (FE-12)
   "expose.mode": "all",
   "expose.include": [],

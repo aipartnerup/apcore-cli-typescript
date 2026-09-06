@@ -44,9 +44,10 @@ describe("RESERVED_GROUP_NAMES + APCLI_SUBCOMMAND_NAMES", () => {
     expect(RESERVED_GROUP_NAMES.has("apcli")).toBe(true);
   });
 
-  it("APCLI_SUBCOMMAND_NAMES contains the 13 canonical subcommands", () => {
+  it("APCLI_SUBCOMMAND_NAMES contains the 15 canonical subcommands", () => {
     const expected = ["list", "describe", "exec", "validate", "init", "health",
-      "usage", "enable", "disable", "reload", "config", "completion", "describe-pipeline"];
+      "usage", "enable", "disable", "reload", "config", "completion", "describe-pipeline",
+      "acl", "openapi"];
     for (const name of expected) {
       expect(APCLI_SUBCOMMAND_NAMES.has(name)).toBe(true);
     }
@@ -245,7 +246,7 @@ describe("createCli — apcli group structure", () => {
     expect(subs).toContain("exec"); // FE-12 guarantee
   });
 
-  it("apcli has all 13 canonical subcommands under mode=all when system modules available", () => {
+  it("apcli has all 15 canonical subcommands under mode=all when system modules available", () => {
     // D10-004: the six system subcommands register only when the executor's
     // registry exposes `system.health.summary` (probe passes). Provide it here.
     const registry = makeRegistry(["system.health.summary"]);

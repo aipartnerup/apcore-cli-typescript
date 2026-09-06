@@ -128,6 +128,7 @@ export async function checkApproval(
   moduleDef: ModuleDescriptor,
   autoApprove: boolean,
   timeout?: number,
+  aclRequiresApproval = false,
 ): Promise<void> {
   const annotations = moduleDef.annotations;
 
@@ -138,8 +139,15 @@ export async function checkApproval(
   } else if (annotations) {
     requiresApproval = getAnnotation(annotations, "requires_approval", false) === true;
   } else {
-    return; // No annotations, no approval needed
+    requiresApproval = false; // No annotations of its own
   }
+
+  // FE-14 §4.10 — union with the ACL-sourced requirement, exactly as apcore's
+  // own Step-5 gate composes them for an in-process call. Without this, the
+  // same `approval: required` rule would demand a human on one execution path
+  // and not on the other. A module annotated `requires_approval: false` can
+  // therefore legitimately reach the prompt.
+  requiresApproval = requiresApproval || aclRequiresApproval;
 
   if (!requiresApproval) {
     return;

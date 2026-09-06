@@ -91,8 +91,23 @@ describe("AuditLogger", () => {
   });
 
   it("uses default path based on home directory", () => {
+    // The suite redirects `DEFAULT_PATH` into a temp directory so a test run
+    // never appends to the developer's real `~/.apcore-cli/audit.jsonl`
+    // (tests/setup/audit-isolation.ts). The production value — what `src/`
+    // computed from `os.homedir()` before the redirect — is stashed there, so
+    // this case still asserts the home directory rather than the stand-in.
+    const real = (globalThis as Record<string, unknown>)[
+      "__apcoreCliRealAuditDefaultPath"
+    ];
+    expect(typeof real).toBe("string");
+    expect(real).toBe(path.join(os.homedir(), ".apcore-cli", "audit.jsonl"));
+
+    // The live value keeps the same shape, which is what every other consumer
+    // of `DEFAULT_PATH` in the suite relies on.
     expect(AuditLogger.DEFAULT_PATH).toContain(".apcore-cli");
     expect(AuditLogger.DEFAULT_PATH).toContain("audit.jsonl");
+    // …and is emphatically NOT the developer's home file.
+    expect(AuditLogger.DEFAULT_PATH).not.toBe(real);
   });
 
   it("constructor parameter is named 'path' (not 'logPath')", () => {

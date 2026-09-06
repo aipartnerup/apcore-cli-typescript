@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     globals: true,
     include: ["tests/**/*.test.ts"],
+    // Redirects AuditLogger.DEFAULT_PATH into a temp directory so no test run
+    // writes to the developer's real `~/.apcore-cli/audit.jsonl`. Mirrors the
+    // session-scoped autouse fixture in apcore-cli-python's tests/conftest.py.
+    setupFiles: ["tests/setup/audit-isolation.ts"],
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],

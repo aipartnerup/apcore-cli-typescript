@@ -6,6 +6,72 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.12.0] - 2026-09-05
+
+Adds two feature groups under `apcli`: **FE-14 ACL Governance** (`apcli acl list|check|validate|status`, the `--acl` flag, `Executor.setAcl` wiring and the §4.8 audit wiring) and **FE-15a OpenAPI Import** (`apcli openapi scan|generate`). `APCLI_SUBCOMMAND_NAMES` grows from 13 to 15. Floors move to `apcore-js>=0.30.0` and `apcore-toolkit>=0.11.1`. The suite goes from 661 to 807 tests.
+
+### Added
+
+- **FE-14 — the ACL half of access control is finally reachable.** apcore has enforced access control since PROTOCOL_SPEC §6, but no apcore-cli SDK had ever constructed or attached an `ACL`: all three build an `Executor` directly rather than going through `APCore`, which is the bootstrap that runs `ACL.discover()`. The result was an executor whose `acl_check` step consulted nothing, in projects that shipped an `acl/global_acl.yaml` and reasonably assumed it was in force.
+
+  - `src/acl-loader.ts` — `resolveAclRoot` (the FE-07 4-tier chain: `--acl` / `create_cli(acl=)` → `APCORE_ACL_ROOT` → `acl.root` in `apcore.yaml` → `./acl`) and `loadCliAcl` (apcore's `ACL.discover` directory convention, delegating the parse to `ACL.load`).
+  - `src/acl-cmd.ts` — `apcli acl list | check | validate | status`.
+  - `--acl PATH` (standalone only, alongside `--extensions-dir` / `--commands-dir` / `--binding`) and `createCli({ acl })`, which accepts a path or a pre-built `ACL`.
+  - `--identity-id` / `--identity-type` / `--role` global flags, which build the `Identity` the `roles` and `identity_types` conditions read.
+
+  **Enforcement is on only when configured.** A missing `acl.root` attaches nothing and changes no behaviour, preserving apcore's invariant that a missing path MUST NOT synthesize an empty default-deny ACL — an empty ACL with `default_effect: deny` would deny every call in every project without an `acl/` directory. There is deliberately no `acl.enabled: false` kill switch: to disable enforcement, point the root at a path that does not exist.
+
+- **FE-14 §4.8 — ACL decisions now reach the audit log.** apcore emits exactly one `AuditEntry` per `checkAccess()` call, but only through an `auditLogger` callback, and nothing in apcore wires the `acl.audit.*` keys to one. The CLI is the legitimate consumer: with `acl.audit.enabled` true (the default whenever an ACL is attached) it installs its FE-05 `AuditLogger` as the callback, so ACL decisions land in `~/.apcore-cli/audit.jsonl` beside the execution records.
+
+  `ACL.load` takes no callback, so the CLI reads the file and constructs the ACL it attaches: `new ACL([...src.rules], src.defaultEffect, callback)`. **`defaultEffect` is carried from the source ACL, never hardcoded** — a file may legitimately declare `default_effect: allow`, and a rebuild passing a literal `"deny"` would silently invert the governing default of every call no rule matched. T-ACL-27b is the discriminating test: every case written against a `deny`-defaulted file passes against that defect.
+
+  All 13 `AuditEntry` fields are written verbatim in their `snake_case` wire form, `handler_error` and `approval_required` included. apcore-js surfaces them camelCased; the log is a cross-language artifact, so what is written matches Python and Rust rather than the local object shape.
+
+  **The rebuilt ACL loses `reload()`**, which needs the `_yamlPath` only `ACL.load` sets. This costs the CLI nothing — no apcore-cli SDK calls it — and is stated rather than worked around: with `acl.audit.enabled: false` the `ACL.load` result is attached directly, with no rebuild and no callback, and an ACL supplied by an embedder through `createCli({ acl })` is attached unchanged, exactly as §4.2 already required.
+
+- **Two config keys: `acl.audit.enabled` and `acl.audit.include_denied`** (`APCORE_ACL_AUDIT_ENABLED` / `APCORE_ACL_AUDIT_INCLUDE_DENIED`, both defaulting to `true`). apcore-owned keys, so apcore-prefixed variables, exactly like `acl.root`. `include_denied` governs **denied** decisions only, which is apcore's own meaning (`schemas/acl-config.schema.json`, "Whether to log denied access attempts"): `false` suppresses deny entries and still writes every allow entry. It is not an inverted "quiet" switch, and the CLI does not fork a similarly-named key with the opposite sense.
+
+- **`ACL_RULE_ERROR -> 47` in the exit-code map.** A real apcore `ErrorCode` that no SDK's map carried, so a malformed ACL file fell through to the generic `1` — indistinguishable from "the module ran and failed". `47` and not `77`: the rule set could not be *read*, which is a configuration fault. `77` stays reserved for an actual access decision, or a script branching on it would misreport a broken config as a permissions problem.
+
+- **FE-15a — `apcli openapi scan` and `apcli openapi generate`.** `src/openapi-source.ts` (`loadOpenapiSource`, `detectProxyHazards`) and `src/openapi-cmd.ts`. `scan` renders what a document would produce in every FE-08 format; `generate -o DIR` materializes it as `<id>.binding.yaml` through the toolkit's `YAMLWriter` — the cross-language artifact, byte-comparable across the three SDKs. Neither registers a module, builds an executor, or issues a request to the described API, and neither touches the registry — which is why they work in this SDK's standalone mode, where no registry is wired.
+
+  **`--openapi-timeout` is in SECONDS.** `loadSpec`'s own timeout is milliseconds in TypeScript and seconds in Python and Rust; the CLI converts at the call boundary so a user never has to know which SDK they are running.
+
+  **Proxy hazards are reported, not silently produced.** The toolkit's proxy writer decides body-versus-query by HTTP method alone, so a query parameter declared on a `POST` / `PUT` / `PATCH` operation would be sent in the request body — silently. FE-15a cannot fix that (the fix is upstream in apcore-toolkit) but it reads the raw document, which still carries `parameters[].in`, and names every affected operation at both scan and generate time. Hazards never change the exit code.
+
+  !!! warning "FE-15a does not make an API callable"
+      `generate` produces binding files. Passing them to `--binding` does not yet produce working commands: the dispatch half (FE-15b) is deferred on two prerequisites, one upstream in apcore-toolkit and one in this SDK's own registry wiring.
+
+### Fixed
+
+- **`--sandbox` bypassed the ACL completely (FE-14 §4.10).** Attaching an ACL to the executor gates the calls that go *through that executor* — and nothing else. The sandbox runner re-execs into a child that builds a fresh `Registry` + `Executor` from `APCORE_EXTENSIONS_ROOT` and calls it directly, so a rule set denying `system.control.*` was enforced for a plain call and silently ignored for a sandboxed one. Switching on a **security** flag switched off access control, which inverts the user's intent. Present in all three SDKs since FE-14 was first implemented, because §4.2 said "attach the ACL" and stopped there.
+
+  The decision is now reached in the parent — the only process that reliably holds the rule set — and a denied call is refused with exit `77` **before the subprocess is spawned**. One enforcement point (`assertDelegatedAccess`), not one per execution mechanism, and it sits at the delegation boundary inside `Sandbox.execute` so a call site that forgets to gate cannot reach a subprocess through it.
+
+  Two details that make it a real gate rather than a gesture: the call's **argument projection** is passed, so `arguments`-scoped rules fire here exactly as they do in-process; and a **Context is always supplied**, because §6.5 makes every conditional rule non-matching when a call supplies none — passing `null` would have left conditional rules inert on this path while they fired on the other, the same class of silent bypass one level down.
+
+  The child re-loading `acl.root` is deliberately **not** the control: the sandbox forwards a narrow environment allowlist by design, so a child's view of that path is neither guaranteed nor under the parent's control.
+
+- **An ACL-sourced `approval: required` now composes with the module annotation on the sandboxed path.** `checkApproval` takes the ACL's requirement and unions it with `annotations.requires_approval`, matching what apcore's own Step-5 gate does for an in-process call. Without it the same rule demanded a human on one execution path and not the other, and a module annotated `requires_approval: false` could be sandboxed past a rule written to gate it.
+
+### Changed
+
+- **`apcore-js>=0.30.0`, `apcore-toolkit>=0.11.1`** (peer and dev dependencies). FE-14 needs `Executor.governanceState()` and `ACL.checkAccess()` / `validateRules()`; FE-15a needs `OpenAPIScanner`, `deriveModuleId` and `loadSpec`. The floors move to 0.30.0 / 0.11.1 to track the current ecosystem release; both upstream releases are confined to layers this CLI does not consume, so the bump required **zero** source changes and the suite stayed green across it.
+- **`APCLI_SUBCOMMAND_NAMES` grows from 13 to 15** (`acl`, `openapi`). Neither is in `_ALWAYS_REGISTERED`: under `mode: include` they register only when explicitly listed. `acl` carries `requiresExecutor: true` (only `status` needs it, but the group is registered as a unit); `openapi` carries `requiresExecutor: false`.
+- **The strategy banner names the *configured* ACL.** `--strategy internal|testing|minimal` removes the `acl_check` step; with an ACL attached the CLI now says so, because bypassing a real rule set is not the same event as running with no rules at all.
+- **`canonicalFormatHelp` no longer renders `[default: ]` for a repeatable option.** An empty array is the collect-into-a-list default; `String([])` is `""`, so it rendered as an empty, meaningless default — filtered now for the same reason `""` itself was.
+- **The `apcli-visibility` golden help fixtures change in all five scenarios**, because the three identity flags are global. `standalone-default` additionally gains `--acl`. The fixtures are shared across the three SDKs and are regenerated centrally.
+
+### Notes
+
+- **The audit wiring needed no upstream change — an earlier note in this file said otherwise and was wrong.** That note claimed FE-14 §4.8 was blocked on a public `ACL.setAuditLogger` that TypeScript and Python would have to gain in apcore 0.30.0. All three SDKs already accept the callback as a constructor argument (`new ACL(rules, defaultEffect, auditLogger)`), so §4.8's load-then-construct sequence was available the whole time. The only thing it costs is `reload()` on the rebuilt ACL, which no apcore-cli SDK calls. The claim is recorded here because it reached this changelog, and the spec's, before it was checked against the SDK sources.
+
+- **`Context.callerId` is never forged.** apcore makes it settable only by `Context.child()`, so a top-level CLI invocation is always the effective caller `@external`. The identity flags set `Identity`, which is what the conditions actually read. They are unauthenticated argv assertions and each flag's `--help` says so: a rule set granting on `roles: [admin]` is trivially satisfied by anyone who can run the binary. When `--identity-type` or `--role` is given without `--identity-id`, the id defaults to the synthetic principal `@cli` (`DEFAULT_IDENTITY_ID`) — the `@` prefix follows apcore's convention for synthetic principals (`@external`, `@system`), so it cannot be confused with a real user whose id is literally `cli`. The value and the constant name are normative and identical in all three SDKs.
+
+- **There is deliberately no host-language source writer.** An earlier draft of FE-15a offered `--writer native`, mapping to the toolkit's `PythonWriter` / `TypeScriptWriter` / `RustWriter` on the `apcli init` precedent that each SDK scaffolds in its own language. It cannot work, for the same reason `RegistryWriter` cannot: every toolkit source writer resolves `target` as a `module.path:callable` import path and rejects anything else, while an OpenAPI-derived `target` is always a route descriptor like `"POST /pets"` — so the flag could never succeed for any input this command can produce. It is not implemented, not even as a refusing stub. Emitting genuine host-language source for an OpenAPI operation means emitting an **HTTP proxy implementation**, a different generator from the stub-importing one the toolkit ships; that belongs with FE-15b.
+
+- **In standalone mode the `acl` group does not register**, because this SDK has no registry there and therefore no executor. `--acl` still resolves and loads (so a malformed document exits `47` rather than running unprotected), and the group lights up automatically once the standalone registry is wired — tracked separately.
+
 ## [0.11.0] - 2026-09-02
 
 Bumps the required `apcore-js` floor to `0.28.0` and `apcore-toolkit` to `0.10.2` to track the aligned apcore 0.28.0 release (2026-08-31). One display fix (see Fixed) plus new regression tests take the suite from 653 to 661; `tsc --noEmit` and `eslint` pass unchanged. The argument-scoped approval path was verified end-to-end against the 0.28.0 runtime rather than inferred from the release notes.

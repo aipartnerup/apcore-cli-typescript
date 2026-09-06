@@ -536,6 +536,8 @@ describe("createCli FE-13 apcli group integration", () => {
     "list", "describe", "exec", "validate", "init",
     "health", "usage", "enable", "disable", "reload",
     "config", "completion", "describe-pipeline",
+    // FE-14 / FE-15a additions (13 -> 15).
+    "acl", "openapi",
   ];
 
   function makeRegistry() {
@@ -577,7 +579,7 @@ describe("createCli FE-13 apcli group integration", () => {
   // T-APCLI-01..09 mode semantics ---------------------------------------
 
   describe("T-APCLI-01..09 mode semantics", () => {
-    it("mode:'all' registers ALL 13 subcommands", () => {
+    it("mode:'all' registers ALL 15 subcommands", () => {
       const cli = createCli({
         registry: makeRegistry(),
         executor: makeFakeExecutor(),
@@ -588,7 +590,7 @@ describe("createCli FE-13 apcli group integration", () => {
       for (const n of FULL_SET) expect(names).toContain(n);
     });
 
-    it("mode:'none' still registers ALL 13 subcommands (hidden group)", () => {
+    it("mode:'none' still registers ALL 15 subcommands (hidden group)", () => {
       const cli = createCli({
         registry: makeRegistry(),
         executor: makeFakeExecutor(),
@@ -650,7 +652,7 @@ describe("createCli FE-13 apcli group integration", () => {
     }
   });
 
-  it("T-APCLI-18/19b: under embedded + mode:'all', all 13 subcommands reachable", () => {
+  it("T-APCLI-18/19b: under embedded + mode:'all', all 15 subcommands reachable", () => {
     const cli = createCli({
       registry: makeRegistry(),
       executor: makeFakeExecutor(),
@@ -674,7 +676,7 @@ describe("createCli FE-13 apcli group integration", () => {
     expect(names).toEqual(["exec"]);
   });
 
-  it("T-APCLI-21: empty exclude:[] under mode:'exclude' registers all 13", () => {
+  it("T-APCLI-21: empty exclude:[] under mode:'exclude' registers all 15", () => {
     const cli = createCli({
       registry: makeRegistry(),
       executor: makeFakeExecutor(),

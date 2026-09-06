@@ -26,6 +26,33 @@ interface AuditEntry {
   duration_ms: number;
 }
 
+/**
+ * One ACL decision, in the wire form written to the audit log (FE-14 §4.8).
+ *
+ * These are apcore's own 13 `AuditEntry` fields, carried verbatim: the CLI
+ * MUST NOT rename or drop any of them, `handler_error` and `approval_required`
+ * included. The names are `snake_case` even though apcore-js surfaces the
+ * object camelCased, because the log is a cross-language artifact — a reader
+ * of `~/.apcore-cli/audit.jsonl` must not have to know which SDK wrote the
+ * line. Declaration order matches apcore-python's `AuditEntry` dataclass, so
+ * the serialized key order matches too.
+ */
+export interface AclAuditRecord {
+  timestamp: string;
+  caller_id: string;
+  target_id: string;
+  decision: string;
+  reason: string;
+  matched_rule: string | null;
+  matched_rule_index: number | null;
+  identity_type: string | null;
+  roles: string[];
+  call_depth: number | null;
+  trace_id: string | null;
+  handler_error: string | null;
+  approval_required: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // AuditLogger
 // ---------------------------------------------------------------------------
@@ -114,6 +141,26 @@ export class AuditLogger {
       exit_code: exitCode,
       duration_ms: durationMs,
     };
+    this.append(entry);
+  }
+
+  /**
+   * Append one ACL decision (FE-14 §4.8).
+   *
+   * Written to the same `~/.apcore-cli/audit.jsonl` as execution records, so
+   * ACL decisions land beside the calls they governed. The record is written
+   * exactly as given — the 13 apcore fields in their `snake_case` wire form —
+   * because the log is read by tooling that is not this SDK.
+   *
+   * Note §7.5: `roles` and `identity_type` reach the file, which FE-05 already
+   * treats as sensitive. Hence the same owner-only hardening as every other
+   * line.
+   */
+  logAclDecision(record: AclAuditRecord): void {
+    this.append(record);
+  }
+
+  private append(entry: AuditEntry | AclAuditRecord): void {
     try {
       fs.appendFileSync(this.logPath, JSON.stringify(entry) + "\n");
       // Restrict to owner read/write (mirrors Rust's 0o600 hardening).

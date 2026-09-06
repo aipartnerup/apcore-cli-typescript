@@ -37,7 +37,22 @@ import {
   registerUsageCommand,
 } from "./system-cmd.js";
 import { registerPipelineCommand } from "./strategy.js";
+import { registerAclCommand } from "./acl-cmd.js";
+import { registerOpenapiCommand } from "./openapi-cmd.js";
+import {
+  assertDelegatedAccess,
+  buildCliContext,
+  collectRole,
+  IDENTITY_FLAGS,
+  loadAclOrExit,
+  noteNoAclConfigured,
+  resolveAclRoot,
+  setAttachedAcl,
+  setCliIdentity,
+  warnStrategyBypassesAcl,
+} from "./acl-loader.js";
 import { ApcliGroup, setReservedGroupNames } from "./builtin-group.js";
+import type { ACL } from "apcore-js";
 // apcore-toolkit is a REQUIRED peer dependency (>=0.7.0). Static import —
 // no runtime fallback. If toolkit is missing the import fails at module
 // load time with a clear MODULE_NOT_FOUND error, matching the package.json
@@ -90,6 +105,30 @@ export function setDocsUrl(url: string | null): void {
 /** Check if --all-options is present in process.argv (pre-parse, before Commander). */
 function hasVerboseFlag(): boolean {
   return process.argv.includes("--all-options");
+}
+
+/**
+ * Read a `--flag VALUE` / `--flag=VALUE` pair out of `process.argv` before
+ * Commander parses it.
+ *
+ * `createCli` has to resolve the ACL during construction — `registerAclCommand`
+ * takes the loaded ACL, and `executor.setAcl` must happen before any action
+ * runs — but Commander only parses argv inside `program.parse()`, long after
+ * `createCli` returns. Same pre-scan precedent as {@link hasVerboseFlag}.
+ */
+function argvOptionValue(flag: string): string | undefined {
+  const argv = process.argv;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === flag) {
+      const next = argv[i + 1];
+      return next !== undefined && !next.startsWith("-") ? next : undefined;
+    }
+    if (arg.startsWith(`${flag}=`)) {
+      return arg.slice(flag.length + 1);
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -371,6 +410,21 @@ export interface CreateCliOptions {
    * "apcore" framework name into their own help output.
    */
   description?: string;
+  /**
+   * ACL governance (FE-14 §4.1 tier 1).
+   *
+   * Accepts either a **path** (file or directory, resolved exactly as
+   * `acl.root` is) or a pre-built apcore `ACL` instance.
+   *
+   * Passing this is an INSTRUCTION and is always honoured. Without it, an
+   * embedded host that supplied its own `executor` keeps its own governance:
+   * the CLI does not attach a discovered ACL behind the host's back
+   * (FE-14 §4.2).
+   *
+   * There is deliberately no `acl: false` kill switch — to disable
+   * enforcement, point the root at a path that does not exist (FE-14 §5).
+   */
+  acl?: string | object;
 }
 
 /**
@@ -398,6 +452,7 @@ export function createCli(
   let appDescription: string | undefined;
   let allowedPrefixes: string[] | undefined;
   let builtinGroupName: string | undefined;
+  let aclOption: string | object | undefined;
   if (typeof extensionsDirOrOpts === "object" && extensionsDirOrOpts !== null) {
     extensionsDir = extensionsDirOrOpts.extensionsDir;
     progName = extensionsDirOrOpts.progName ?? progName;
@@ -415,6 +470,7 @@ export function createCli(
     appDescription = extensionsDirOrOpts.description;
     builtinGroupName = extensionsDirOrOpts.builtinGroupName;
     allowedPrefixes = extensionsDirOrOpts.allowedPrefixes;
+    aclOption = extensionsDirOrOpts.acl;
   } else {
     extensionsDir = extensionsDirOrOpts;
   }
@@ -474,6 +530,10 @@ export function createCli(
   }
 
   const registryInjected = registry !== undefined;
+  // FE-14 §4.2: an embedded host that constructed its own Executor owns its
+  // own governance. Silently attaching a CLI-discovered ACL over the host's
+  // configuration would change enforcement behind its back.
+  const executorInjected = executor !== undefined;
 
   const program = new Command(resolvedProgName)
     .exitOverride()
@@ -487,12 +547,32 @@ export function createCli(
   }
   program.configureHelp({ formatHelp: canonicalFormatHelp });
 
-  // Discovery flags are standalone-only (FE-13 T-APCLI-27/28).
+  // Discovery flags are standalone-only (FE-13 T-APCLI-27/28). `--acl` joins
+  // them for the same reason: an embedded host configures governance through
+  // its own Executor, not through this CLI's argv (FE-14 §4.1 tier 1).
   if (!registryInjected) {
     program.option("--extensions-dir <path>", "Path to extensions directory");
     program.option("--commands-dir <path>", "Path to convention-based commands directory");
     program.option("--binding <path>", "Path to binding.yaml for display overlay");
+    program.option("--acl <path>", "Path to the ACL file or directory (default: ./acl)");
   }
+
+  // FE-14 §4.3 identity flags. They build the `Identity` that the `roles` and
+  // `identity_types` conditions read; `Context.callerId` is NEVER settable
+  // from argv, so a real invocation is always the effective caller
+  // `@external` (§7.2).
+  //
+  // These are UNAUTHENTICATED assertions, and the help text says so because
+  // §7.1 requires each flag to carry the warning: a rule set that grants on
+  // `roles: [admin]` is trivially satisfied by anyone who can run the binary.
+  program.option(IDENTITY_FLAGS.id.flags, IDENTITY_FLAGS.id.description);
+  program.option(IDENTITY_FLAGS.type.flags, IDENTITY_FLAGS.type.description);
+  program.option(
+    IDENTITY_FLAGS.role.flags,
+    IDENTITY_FLAGS.role.description,
+    collectRole,
+    [] as string[],
+  );
 
   // Build ApcliGroup via 3-source dispatch (FE-13 §4.8):
   //   1) Pre-built ApcliGroup instance (pass-through)
@@ -584,7 +664,74 @@ export function createCli(
     process.exit(EXIT_CODES.INVALID_CLI_INPUT);
   }
 
-  _registerApcliSubcommands(apcliGroup, apcliCfg, registry, executor, exposureFilter);
+  // -------------------------------------------------------------------------
+  // FE-14 — resolve, load and attach the ACL (§4.1, §4.2)
+  // -------------------------------------------------------------------------
+  //
+  // Enforcement is on ONLY when configured: a missing root attaches nothing
+  // and changes no behaviour, preserving apcore's `ACL.discover` invariant
+  // that a missing path must not synthesize an empty default-deny ACL.
+  let cliAcl: ACL | null = null;
+  let aclSource: string | null = null;
+  if (typeof aclOption === "object" && aclOption !== null) {
+    // A pre-built ACL is an instruction — always honoured, even when the host
+    // supplied its own executor (FE-14 §4.2, T-ACL-29).
+    cliAcl = aclOption as ACL;
+    aclSource = null;
+  } else if (!executorInjected || typeof aclOption === "string") {
+    const flagPath =
+      typeof aclOption === "string" && aclOption !== ""
+        ? aclOption
+        : registryInjected
+          ? undefined
+          : argvOptionValue("--acl");
+    let resolver: ConfigResolver | null = null;
+    try {
+      resolver = new ConfigResolver();
+    } catch {
+      resolver = null;
+    }
+    const root = resolver ? resolveAclRoot(resolver, flagPath) : flagPath ?? null;
+    if (root !== null) {
+      // The resolver is threaded through so `acl.audit.*` (FE-14 §4.8) is read
+      // from the same `apcore.yaml` the root came from, rather than a second
+      // parse of a file that may have changed underneath.
+      const [loaded, source] = loadAclOrExit(root, resolver);
+      cliAcl = loaded;
+      aclSource = source;
+      if (loaded === null) noteNoAclConfigured(root);
+    } else {
+      noteNoAclConfigured(null);
+    }
+  }
+
+  if (cliAcl && executor && typeof executor.setAcl === "function") {
+    try {
+      executor.setAcl(cliAcl);
+      // Also held CLI-side: §4.10's delegated execution paths (`--sandbox`)
+      // build their own executor and must be gated from the parent, which is
+      // the only process that reliably holds the rule set.
+      setAttachedAcl(cliAcl);
+    } catch (err) {
+      // A refused attachment is a governance fault, not a warning: the user
+      // configured an ACL and would otherwise run unprotected.
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`Error: failed to attach ACL: ${msg}\n`);
+      process.exit(EXIT_CODES.ACL_RULE_ERROR);
+    }
+  } else {
+    setAttachedAcl(null);
+  }
+
+  _registerApcliSubcommands(
+    apcliGroup,
+    apcliCfg,
+    registry,
+    executor,
+    exposureFilter,
+    cliAcl,
+    aclSource,
+  );
 
   // Footer hints for discoverability
   program.addHelpText("after", [
@@ -632,6 +779,16 @@ export function createCli(
   // Commander actions are async, so we can set up toolkit state lazily.
   program.hook("preAction", async (thisCommand) => {
     const opts = thisCommand.opts();
+    // FE-14 §4.3 — record the asserted identity before any action runs, so
+    // `apcli exec` / `apcli validate` / module dispatch can hand apcore a
+    // Context carrying it. When none of the three flags is given, nothing is
+    // recorded and no Identity is constructed at all.
+    const roles = Array.isArray(opts.role) ? (opts.role as string[]) : [];
+    setCliIdentity({
+      id: opts.identityId as string | undefined,
+      type: opts.identityType as string | undefined,
+      roles: roles.length > 0 ? roles : undefined,
+    });
     const commandsDir = opts.commandsDir as string | undefined;
     const bindingPath = opts.binding as string | undefined;
     await applyToolkitIntegration(commandsDir, bindingPath, { allowedPrefixes });
@@ -663,7 +820,7 @@ interface _RegistrarEntry {
 }
 
 /**
- * Central dispatcher for the 13 canonical apcli subcommands. Called once per
+ * Central dispatcher for the 15 canonical apcli subcommands. Called once per
  * createCli invocation after the apcli Commander group is built. Honors
  * {@link ApcliGroup.resolveVisibility} for include/exclude modes, and skips
  * entries whose `requiresExecutor: true` flag is not satisfied.
@@ -674,6 +831,8 @@ function _registerApcliSubcommands(
   registry: Registry | undefined,
   executor: Executor | undefined,
   exposureFilter: ExposureFilter,
+  acl: ACL | null = null,
+  aclSource: string | null = null,
 ): void {
   // Standalone-mode fallback registry. Previously returned an empty list +
   // null; that silently masked the "no registry wired" contract gap — users
@@ -706,6 +865,13 @@ function _registerApcliSubcommands(
     { name: "config",            requiresExecutor: true,  register: (g, _r, ex) => registerConfigCommand(g, ex!) },
     { name: "completion",        requiresExecutor: false, register: (g) => registerCompletionCommand(g) },
     { name: "describe-pipeline", requiresExecutor: true,  register: (g, _r, ex) => registerPipelineCommand(g, ex!) },
+    // FE-14 — `acl status` reads Executor.governanceState(), so the group
+    // needs the executor even though list/check/validate do not.
+    { name: "acl",               requiresExecutor: true,  register: (g, _r, ex) => registerAclCommand(g, ex!, acl, aclSource) },
+    // FE-15a — pure document-in / artifact-out. Registers nothing, builds no
+    // executor and never touches the registry, so it works in standalone mode
+    // where no registry is wired (T-OAPI-27).
+    { name: "openapi",           requiresExecutor: false, register: (g) => registerOpenapiCommand(g) },
   ];
 
   // The six system subcommands register atomically: either all appear (the
@@ -1100,7 +1266,7 @@ export function buildModuleCommand(
           process.stderr.write("Error: Executor does not support validate.\n");
           process.exit(EXIT_CODES.MODULE_EXECUTE_ERROR);
         }
-        const preflight = await executor.validate(moduleId, merged);
+        const preflight = await executor.validate(moduleId, merged, buildCliContext());
         formatPreflightResult(preflight, outputFormat);
         // --trace --dry-run: show pipeline preview
         if (traceFlag) {
@@ -1139,8 +1305,17 @@ export function buildModuleCommand(
         merged._approval_token = approvalToken;
       }
 
-      // 4. Check approval
-      await checkApproval(moduleDef, autoApprove, approvalTimeout);
+      // 4. Check approval.
+      //
+      // FE-14 §4.10 — when the call is about to be delegated to an execution
+      // path that carries no ACL, the decision is reached here, before the
+      // gate, so an ACL-sourced `approval: required` composes with the
+      // module's annotation. A denial throws ACLDeniedError and exits 77
+      // before anything is spawned.
+      const aclRequiresApproval = sandboxEnabled
+        ? assertDelegatedAccess(moduleId, merged)
+        : false;
+      await checkApproval(moduleDef, autoApprove, approvalTimeout, aclRequiresApproval);
 
       // 5. Execute with timing
 
@@ -1255,10 +1430,14 @@ export function buildModuleCommand(
         if (strategyName !== "standard" && process.stderr.isTTY) {
           process.stderr.write(`Warning: Using '${strategyName}' strategy.\n`);
         }
+        // FE-14 §6.2 — bypassing a *configured* ACL is a materially different
+        // event from running with no rules at all, and is reported even when
+        // stderr is not a terminal.
+        warnStrategyBypassesAcl(strategyName);
       } else {
         const { Sandbox } = await import("./security/index.js");
         const sandbox = new Sandbox(sandboxEnabled);
-        result = await sandbox.execute(moduleId, merged, executor);
+        result = await sandbox.execute(moduleId, merged, executor, buildCliContext());
       }
       const durationMs = Math.round(performance.now() - startTime);
 

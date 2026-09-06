@@ -77,13 +77,41 @@ export interface StrategyStep {
 }
 
 /**
+ * What is actually gating an executor's registry (PROTOCOL_SPEC §6.6.5).
+ *
+ * Shape parity with apcore-js `GovernanceState`. `aclConfigured` alone is NOT
+ * the answer to "what is gating this registry": the ACL and approval gates are
+ * pipeline *steps*, and the `internal`, `testing` and `minimal` strategies
+ * remove them — so an executor can hold an ACL that no step ever consults.
+ * Rendered by `apcli acl status` (FE-14 §4.7).
+ */
+export interface GovernanceState {
+  controlModulesRegistered: boolean;
+  readModulesRegistered: boolean;
+  aclConfigured: boolean;
+  builtinAclGateWired: boolean;
+  approvalHandlerConfigured: boolean;
+  builtinApprovalGateWired: boolean;
+  policyStrict: boolean;
+  allControlModulesRequireApproval: boolean;
+  /** Derived: control modules registered and no recognised built-in gate engages. */
+  unprotectedControlSurface: boolean;
+}
+
+/**
  * CLI-internal Executor shim. Method names align with apcore-js >= 0.22.0
  * (Executor.call as the primary invocation method). Embedders may pass
  * an apcore-js `Executor` instance directly — no adapter required.
  */
 export interface Executor {
-  /** Invoke a module. Aligned with apcore-js Executor.call(). */
-  call(moduleId: string, input: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Invoke a module. Aligned with apcore-js Executor.call().
+   *
+   * The optional third argument is the apcore `Context`, which the CLI
+   * supplies only when the FE-14 identity flags asserted one. It is typed
+   * `unknown` here because `cli.ts` deliberately carries no apcore-js import.
+   */
+  call(moduleId: string, input: Record<string, unknown>, context?: unknown): Promise<unknown>;
   /**
    * The executor's registry. Aligned with apcore-js `Executor.registry`.
    * Used for synchronous availability probes (e.g. system-module gating)
@@ -91,7 +119,7 @@ export interface Executor {
    */
   registry?: Registry;
   /** Validate inputs without executing. Returns a PreflightResult. */
-  validate?(moduleId: string, input: Record<string, unknown>): Promise<PreflightResult>;
+  validate?(moduleId: string, input: Record<string, unknown>, context?: unknown): Promise<PreflightResult>;
   /** Execute with pipeline trace. Returns [result, PipelineTrace]. */
   callWithTrace?(moduleId: string, input: Record<string, unknown>, options?: { strategy?: string }): Promise<[unknown, PipelineTrace]>;
   /** Stream execution — async iterator of chunks. */
@@ -104,6 +132,17 @@ export interface Executor {
   describePipeline?(): StrategyInfo;
   /** The current execution strategy object, exposing step metadata. */
   currentStrategy?: { readonly steps: readonly StrategyStep[] };
+  /**
+   * Attach an access-control provider (FE-14 §4.2). Aligned with apcore-js
+   * `Executor.setAcl` — updates both the executor field and the strategy's
+   * ACL step. Typed `unknown` because `cli.ts` carries no apcore-js import.
+   */
+  setAcl?(acl: unknown): void;
+  /**
+   * Report what is actually gating this registry (apcore-js >= 0.29.0).
+   * A pure read — it never enforces, warns, throws or mutates.
+   */
+  governanceState?(): GovernanceState;
 }
 
 /** Result of a preflight validation check. */

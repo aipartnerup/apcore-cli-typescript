@@ -21,6 +21,11 @@ import {
   firstFailedExitCode,
   resolveFormat,
 } from "./output.js";
+import {
+  assertDelegatedAccess,
+  buildCliContext,
+  warnStrategyBypassesAcl,
+} from "./acl-loader.js";
 import { getAuditLogger } from "./security/audit.js";
 import { sortModulesByUsage } from "./system-usage.js";
 
@@ -329,12 +334,18 @@ export function registerExecCommand(
 
       const startTime = performance.now();
       try {
-        await checkApproval(moduleDef, opts.yes, opts.approvalTimeout);
+        // FE-14 §4.10 — see main.ts buildModuleCommand: the sandboxed path
+        // carries no ACL, so the decision is reached here, before the gate,
+        // and its approval requirement composes with the annotation.
+        const aclRequiresApproval = opts.sandbox
+          ? assertDelegatedAccess(moduleId, merged)
+          : false;
+        await checkApproval(moduleDef, opts.yes, opts.approvalTimeout, aclRequiresApproval);
 
         // --dry-run: validate without executing
         if (opts.dryRun) {
           if (executor.validate) {
-            const preflight = await executor.validate(moduleId, merged);
+            const preflight = await executor.validate(moduleId, merged, buildCliContext());
             formatPreflightResult(preflight, opts.format);
           } else {
             process.stdout.write(JSON.stringify({ valid: true }) + "\n");
@@ -348,12 +359,15 @@ export function registerExecCommand(
         // short-circuit only checked opts.strategy, leaving --trace silently
         // dropped on the TS side.
         if ((opts.trace || opts.strategy) && executor.callWithTrace) {
+          // FE-14 §6.2 — a strategy that removes `acl_check` bypasses a
+          // configured ACL; say so rather than enforcing nothing silently.
+          warnStrategyBypassesAcl(opts.strategy);
           const [res] = await executor.callWithTrace(moduleId, merged, { strategy: opts.strategy });
           result = res;
         } else {
           const { Sandbox } = await import("./security/index.js");
           const sandbox = new Sandbox(opts.sandbox);
-          result = await sandbox.execute(moduleId, merged, executor);
+          result = await sandbox.execute(moduleId, merged, executor, buildCliContext());
         }
         const durationMs = Math.round(performance.now() - startTime);
 
@@ -417,7 +431,7 @@ export function registerValidateCommand(
       // does not execute), but audit-log exceptions so scripted callers
       // always produce a trail even on failed validation (main.ts:1151-1159).
       try {
-        const preflight = await executor.validate(moduleId, merged);
+        const preflight = await executor.validate(moduleId, merged, buildCliContext());
         formatPreflightResult(preflight, opts.format);
         process.exit(preflight.valid ? 0 : firstFailedExitCode(preflight));
       } catch (err: unknown) {

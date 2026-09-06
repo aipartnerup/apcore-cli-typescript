@@ -108,6 +108,14 @@ export const EXIT_CODES = {
   APPROVAL_TIMEOUT: 46,
   CONFIG_NOT_FOUND: 47,
   CONFIG_INVALID: 47,
+  /**
+   * A structurally invalid ACL document (FE-14 §6.1).
+   *
+   * Deliberately 47 (CONFIG_INVALID) and not 77 (ACL_DENIED): the rule set
+   * could not be *read*, which is a configuration fault, not an access
+   * decision. Scripts branching on 77 must not see a broken config file.
+   */
+  ACL_RULE_ERROR: 47,
   SCHEMA_CIRCULAR_REF: 48,
   ACL_DENIED: 77,
   // Config Bus errors (apcore >= 0.15.0)
@@ -179,6 +187,9 @@ export function exitCodeForError(error: unknown): ExitCode {
       MODULE_EXECUTE_ERROR: EXIT_CODES.MODULE_EXECUTE_ERROR,
       MODULE_TIMEOUT: EXIT_CODES.MODULE_TIMEOUT,
       ACL_DENIED: EXIT_CODES.ACL_DENIED,
+      // FE-14 §6.1 — a malformed ACL file is a config fault (47), never a
+      // denial (77). Cross-SDK map parity: Python / Rust carry the same row.
+      ACL_RULE_ERROR: EXIT_CODES.ACL_RULE_ERROR,
       // Config Bus errors (apcore >= 0.15.0)
       CONFIG_NAMESPACE_RESERVED: EXIT_CODES.CONFIG_NAMESPACE_RESERVED,
       CONFIG_NAMESPACE_DUPLICATE: EXIT_CODES.CONFIG_NAMESPACE_DUPLICATE,

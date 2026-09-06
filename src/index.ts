@@ -76,6 +76,35 @@ export { registerPipelineCommand } from "./strategy.js";
 // Init command (FE-10)
 export { registerInitCommand } from "./init-cmd.js";
 
+// ACL governance (FE-14)
+export { registerAclCommand } from "./acl-cmd.js";
+export {
+  resolveAclRoot,
+  loadCliAcl,
+  getAclSource,
+  setCliIdentity,
+  getCliIdentity,
+  buildCliContext,
+  assertDelegatedAccess,
+  getAttachedAcl,
+  setAttachedAcl,
+  isAclAttached,
+  DEFAULT_IDENTITY_ID,
+  GLOBAL_ACL_FILENAME,
+} from "./acl-loader.js";
+export type { CliIdentitySpec } from "./acl-loader.js";
+
+// OpenAPI import (FE-15a)
+export { registerOpenapiCommand } from "./openapi-cmd.js";
+export {
+  loadOpenapiSource,
+  detectProxyHazards,
+  parseHeaders,
+  OpenapiSourceError,
+  DEFAULT_OPENAPI_TIMEOUT_SECONDS,
+} from "./openapi-source.js";
+export type { ProxyHazard } from "./openapi-source.js";
+
 // Errors
 export {
   ApprovalTimeoutError,
@@ -111,3 +140,4 @@ export { setLogLevel, getLogLevel } from "./logger.js";
 // during async execution. Embedders writing cross-SDK glue should not rely on
 // the getter — `setAuditLogger` is the canonical cross-SDK API.
 export { AuditLogger, setAuditLogger, getAuditLogger, AuthProvider, ConfigEncryptor, Sandbox } from "./security/index.js";
+export type { AclAuditRecord } from "./security/index.js";
