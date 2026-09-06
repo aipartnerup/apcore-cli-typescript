@@ -155,6 +155,11 @@ export const APCLI_SUBCOMMAND_NAMES: ReadonlySet<string> = new Set([
   "config",
   "completion",
   "describe-pipeline",
+  // FE-14 — ACL governance. Not in _ALWAYS_REGISTERED: under `mode: include`
+  // it registers only when explicitly listed.
+  "acl",
+  // FE-15a — OpenAPI import. Needs neither registry nor executor.
+  "openapi",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -339,11 +344,19 @@ export class ApcliGroup {
     }
 
     if (typeof config !== "object" || Array.isArray(config)) {
-      // Unexpected shape — refuse to silently coerce.
-      process.stderr.write(
-        `Error: apcli config must be a boolean or object; got ${Array.isArray(config) ? "array" : typeof config}.\n`,
+      // Unexpected shape — refuse to silently coerce. This branch is only
+      // ever reachable via fromCliConfig (Tier 1): fromYaml / tryFromYaml
+      // both pre-filter bad shapes into a warned auto-detect fallback before
+      // ever calling _build (see fromYaml's own shape-guard above, A-D-006).
+      // A hard `process.exit()` here would make an invalid *programmatic*
+      // config uncatchable by any caller, contradicting the spec's declared
+      // catchable-TypeError-equivalent contract (Python's `from_cli_config`
+      // raises `TypeError` for the same input, which `create_cli()` catches
+      // and converts to exit 2 — see main.ts's dispatch try/catch). Throw
+      // instead, same pattern as fromYaml's own fix.
+      throw new ApcliGroupError(
+        `apcli config must be a boolean or object; got ${Array.isArray(config) ? "array" : typeof config}.`,
       );
-      process.exit(EXIT_CODES.INVALID_CLI_INPUT);
     }
 
     const cfg = config as Record<string, unknown>;

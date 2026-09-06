@@ -588,8 +588,9 @@ describe("ApcliGroup unknown subcommand warnings (Issue 7)", () => {
     warnSpy.mockRestore();
   });
 
-  it("APCLI_SUBCOMMAND_NAMES exports all 13 canonical names", () => {
-    expect(APCLI_SUBCOMMAND_NAMES.size).toBe(13);
+  it("APCLI_SUBCOMMAND_NAMES exports all 15 canonical names", () => {
+    // 13 through v0.11; FE-14 added `acl` and FE-15a added `openapi`.
+    expect(APCLI_SUBCOMMAND_NAMES.size).toBe(15);
     for (const name of [
       "list",
       "describe",
@@ -604,6 +605,8 @@ describe("ApcliGroup unknown subcommand warnings (Issue 7)", () => {
       "config",
       "completion",
       "describe-pipeline",
+      "acl",
+      "openapi",
     ]) {
       expect(APCLI_SUBCOMMAND_NAMES.has(name)).toBe(true);
     }
@@ -824,5 +827,59 @@ describe("ApcliGroupError", () => {
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).name).toBe("ApcliGroupError");
     expect((caught as Error).message).toContain("builtinGroupName");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue — fromCliConfig must THROW (not process.exit) on a malformed shape
+// ---------------------------------------------------------------------------
+//
+// `_build`'s shape guard (non-bool/non-object/array config) used to call
+// `process.exit(EXIT_CODES.INVALID_CLI_INPUT)` directly, which nothing
+// downstream could ever catch — contradicting the spec's declared
+// catchable-TypeError-equivalent contract for `fromCliConfig` (Tier 1).
+// Python's `from_cli_config` raises `TypeError` for the identical input,
+// which `create_cli()` then catches and converts to exit 2.
+// `fromYaml` was already patched for this exact shape (A-D-006): it
+// pre-filters bad shapes into a warned auto-detect fallback before ever
+// reaching `_build`. `fromCliConfig` has no such pre-filter, so a malformed
+// *programmatic* config must surface as a catchable error instead.
+
+describe("ApcliGroup.fromCliConfig malformed shape (catchable, not process.exit)", () => {
+  it("throws a catchable error for a string config, instead of exiting the process", () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("exit");
+    });
+    expect(() =>
+      ApcliGroup.fromCliConfig(
+        "true" as unknown as ApcliConfig,
+        { registryInjected: false },
+      ),
+    ).toThrow();
+    // Must NOT have gone through process.exit — the whole point of the fix.
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it("the thrown error is an ApcliGroupError (instanceof Error, catchable)", () => {
+    let caught: unknown = null;
+    try {
+      ApcliGroup.fromCliConfig("true" as unknown as ApcliConfig, {
+        registryInjected: false,
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApcliGroupError);
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toMatch(/apcli config must be a boolean or object/);
+  });
+
+  it("also throws for a number and for null-prototype-breaking shapes like arrays", () => {
+    expect(() =>
+      ApcliGroup.fromCliConfig(42 as unknown as ApcliConfig, { registryInjected: false }),
+    ).toThrow(ApcliGroupError);
+    expect(() =>
+      ApcliGroup.fromCliConfig([1, 2] as unknown as ApcliConfig, { registryInjected: false }),
+    ).toThrow(ApcliGroupError);
   });
 });
