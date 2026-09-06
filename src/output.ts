@@ -93,6 +93,38 @@ function formatTable(
   return [headerLine, sep, ...dataLines].join("\n") + "\n";
 }
 
+/**
+ * Render a box-drawing table in the FE-14 / FE-15 shape.
+ *
+ * Columns are separated by ` │ ` and the header rule is drawn with `─` / `┼`
+ * at the same offsets, so the divider lines up with the separators whatever
+ * the content width. Distinct from the plain `formatTable` above, which the
+ * older `list` / exec surfaces use — the two are not interchangeable and the
+ * newer command groups are specified against this one.
+ *
+ * @internal Cross-module helper consumed by acl-cmd.ts and openapi-cmd.ts.
+ */
+export function formatBoxTable(
+  headers: string[],
+  rows: string[][],
+  rightAlign: boolean[] = [],
+): string {
+  const widths = headers.map((h, i) =>
+    Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)),
+  );
+  const pad = (cell: string, i: number): string =>
+    rightAlign[i] ? cell.padStart(widths[i]) : cell.padEnd(widths[i]);
+
+  const lines = [
+    ("  " + headers.map((h, i) => pad(h, i)).join(" │ ")).trimEnd(),
+    "──" + widths.map((w) => "─".repeat(w)).join("─┼─"),
+  ];
+  for (const row of rows) {
+    lines.push("  " + row.map((c, i) => pad(c ?? "", i)).join(" │ ").trimEnd());
+  }
+  return lines.join("\n") + "\n";
+}
+
 // ---------------------------------------------------------------------------
 // formatModuleList
 // ---------------------------------------------------------------------------
@@ -306,7 +338,12 @@ function selectFields(result: Record<string, unknown>, fields: string): Record<s
         break;
       }
     }
-    selected[key] = val;
+    // `undefined` is never the not-found sentinel we emit: both
+    // JSON.stringify and js-yaml's dump() silently OMIT an object key whose
+    // value is `undefined`, which would drop the --fields entry from the
+    // output entirely instead of the documented explicit `null`
+    // (spec §4.6, cross-SDK parity with Python/Rust).
+    selected[key] = val === undefined ? null : val;
   }
   return selected;
 }

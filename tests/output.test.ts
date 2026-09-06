@@ -312,4 +312,31 @@ describe("formatExecResult()", () => {
     formatExecResult([{ a: 1 }, { b: 2 }], "jsonl");
     expect(output).toBe('{"a":1}\n{"b":2}\n');
   });
+
+  // --- Regression: --fields projection dropping missing keys (spec §4.6) ---
+  //
+  // `selectFields` previously used `undefined` as its not-found sentinel.
+  // Both JSON.stringify and js-yaml's dump() OMIT object keys whose value is
+  // `undefined`, so a --fields path naming a missing intermediate key
+  // vanished from the output entirely instead of surfacing as an explicit
+  // `null`, as Python/Rust both do.
+  it("--fields projection emits an explicit null for a missing path, not an absent key", () => {
+    formatExecResult({ metadata: { present: 1 } }, "json", "metadata.missing");
+    const parsed = JSON.parse(output);
+    expect(Object.prototype.hasOwnProperty.call(parsed, "metadata.missing")).toBe(true);
+    expect(parsed["metadata.missing"]).toBeNull();
+  });
+
+  it("--fields projection emits an explicit null when a whole top-level path is absent", () => {
+    formatExecResult({ a: 1 }, "json", "b.c");
+    const parsed = JSON.parse(output);
+    expect(Object.prototype.hasOwnProperty.call(parsed, "b.c")).toBe(true);
+    expect(parsed["b.c"]).toBeNull();
+  });
+
+  it("--fields projection still selects a present path normally", () => {
+    formatExecResult({ metadata: { present: 1 } }, "json", "metadata.present");
+    const parsed = JSON.parse(output);
+    expect(parsed["metadata.present"]).toBe(1);
+  });
 });
