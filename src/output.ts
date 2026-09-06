@@ -166,11 +166,14 @@ export async function formatModuleList(
       return base;
     });
     process.stdout.write(formatTable(headers, rows));
-  } else if (format === "json") {
+  } else if (format === "json" || format === "csv" || format === "yaml" || format === "jsonl") {
     // CLI JSON output preserves the `id` field name for backward
     // compatibility with downstream scripts (jq pipelines etc.).
     // Internal `moduleId` is mapped to user-facing `id` here at the
-    // output boundary.
+    // output boundary. The same row shape is shared across json/csv/yaml/jsonl
+    // — those are all declared `--format` choices for `list` and must each
+    // produce real output, not silently nothing (formerly this if/else-if
+    // chain had no branch for csv/yaml/jsonl at all).
     const result = modules.map((m) => {
       const entry: Record<string, unknown> = {
         id: m.moduleId,
@@ -186,7 +189,16 @@ export async function formatModuleList(
       }
       return entry;
     });
-    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    if (format === "json") {
+      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    } else if (format === "csv") {
+      // Delegate to apcore-toolkit for byte-equivalent cross-SDK output.
+      if (result.length > 0) process.stdout.write(formatCsv(result));
+    } else if (format === "yaml") {
+      process.stdout.write(yaml.dump(result, { lineWidth: -1 }));
+    } else if (format === "jsonl") {
+      if (result.length > 0) process.stdout.write(formatJsonl(result));
+    }
   } else if (format === "markdown" || format === "skill") {
     let toolkit: typeof import("apcore-toolkit");
     try {
@@ -274,10 +286,13 @@ export async function formatModuleDetail(
     if (tags.length > 0) {
       process.stdout.write(`\nTags: ${tags.join(", ")}\n`);
     }
-  } else if (format === "json") {
+  } else if (format === "json" || format === "csv" || format === "yaml" || format === "jsonl") {
     // CLI JSON output preserves the `id` field name for backward
     // compatibility with downstream scripts. Internal `moduleId` is
-    // mapped to user-facing `id` here at the output boundary.
+    // mapped to user-facing `id` here at the output boundary. `describe`
+    // declares csv/yaml/jsonl as valid `--format` choices too (same root
+    // cause as `formatModuleList`'s gap above): a single module renders as
+    // one row for csv/jsonl and a full document for yaml.
     const result: Record<string, unknown> = {
       id: moduleDef.moduleId,
       description: moduleDef.description,
@@ -303,7 +318,15 @@ export async function formatModuleDetail(
       }
     }
 
-    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    if (format === "json") {
+      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    } else if (format === "csv") {
+      process.stdout.write(formatCsv([result]));
+    } else if (format === "yaml") {
+      process.stdout.write(yaml.dump(result, { lineWidth: -1 }));
+    } else if (format === "jsonl") {
+      process.stdout.write(formatJsonl([result]));
+    }
   } else if (format === "markdown" || format === "skill") {
     let toolkit: typeof import("apcore-toolkit");
     try {

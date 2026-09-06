@@ -113,6 +113,31 @@ describe("formatModuleList()", () => {
     formatModuleList([], "json");
     expect(JSON.parse(output)).toEqual([]);
   });
+
+  // --- Regression: csv/yaml/jsonl silently produced no output (spec-declared
+  // --format choices for `list`, but formatModuleList's if/else-if chain had
+  // no branch for them) ---
+  it("outputs actual CSV rows for csv format, not empty output", () => {
+    formatModuleList([makeMod("math.add", "Add numbers", ["math"])], "csv");
+    expect(output.length).toBeGreaterThan(0);
+    expect(output).toContain("id,description,tags");
+    expect(output).toContain("math.add");
+  });
+
+  it("outputs actual JSONL rows for jsonl format, not empty output", () => {
+    formatModuleList([makeMod("math.add", "Add numbers", ["math"])], "jsonl");
+    expect(output.length).toBeGreaterThan(0);
+    const rows = output.trim().split("\n").map((l) => JSON.parse(l));
+    expect(rows).toEqual([{ id: "math.add", description: "Add numbers", tags: ["math"] }]);
+  });
+
+  it("outputs actual YAML for yaml format, not empty output", async () => {
+    const yamlLib = (await import("js-yaml")).default;
+    formatModuleList([makeMod("math.add", "Add numbers", ["math"])], "yaml");
+    expect(output.length).toBeGreaterThan(0);
+    const parsed = yamlLib.load(output);
+    expect(parsed).toEqual([{ id: "math.add", description: "Add numbers", tags: ["math"] }]);
+  });
 });
 
 describe("formatModuleDetail()", () => {
@@ -191,6 +216,33 @@ describe("formatModuleDetail()", () => {
     expect(output).not.toContain("Input Schema:");
     expect(output).not.toContain("Annotations:");
     expect(output).not.toContain("Tags:");
+  });
+
+  // --- Regression: same missing-branch gap as formatModuleList — `describe`
+  // declares csv/yaml/jsonl as valid --format choices but formatModuleDetail's
+  // if/else-if chain had no branch for them, silently producing no output ---
+  it("outputs an actual CSV row for csv format, not empty output", () => {
+    formatModuleDetail(baseMod, "csv");
+    expect(output.length).toBeGreaterThan(0);
+    expect(output).toContain("id");
+    expect(output).toContain("test.mod");
+  });
+
+  it("outputs an actual JSONL line for jsonl format, not empty output", () => {
+    formatModuleDetail(baseMod, "jsonl");
+    expect(output.length).toBeGreaterThan(0);
+    const rows = output.trim().split("\n").map((l) => JSON.parse(l));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe("test.mod");
+  });
+
+  it("outputs actual YAML for yaml format, not empty output", async () => {
+    const yamlLib = (await import("js-yaml")).default;
+    formatModuleDetail(baseMod, "yaml");
+    expect(output.length).toBeGreaterThan(0);
+    const parsed = yamlLib.load(output) as Record<string, unknown>;
+    expect(parsed.id).toBe("test.mod");
+    expect(parsed.description).toBe("A test module");
   });
 });
 
